@@ -370,8 +370,8 @@ BOOL CIOCP::PostAcceptEx()
       //glog::GetInstance()->AddLine("post accecptex socket:%d IOCP_IO_PTR:%p", socket, lp_io);
       /////////////////////////////////////////////////
       bRet = lpAcceptEx(m_listen_socket, lp_io->socket, lp_io->buf,
-                        //lp_io->wsaBuf.len - 2 * (sizeof(SOCKADDR_IN) + 16),
-                        0,
+                        lp_io->wsaBuf.len - 2 * (sizeof(SOCKADDR_IN) + 16),
+                        //0,
                         sizeof(SOCKADDR_IN) + 16,
                         sizeof(SOCKADDR_IN) + 16,
                         &dwBytes, &lp_io->ol);
@@ -407,6 +407,7 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key)
           lpGetAcceptExSockaddrs(lp_io->buf, 0, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&addrLocal, &nLocalLen, (LPSOCKADDR*)&addrClient, &nClientLen);
           char* ip1 = inet_ntoa(addrClient->sin_addr);
           sprintf(szPeerAddress, "%s:%d", ip1, addrClient->sin_port);
+
           CListTextElementUI* pListElement = new CListTextElementUI;
           m_plistuser->Add(pListElement);
           lp_io->pUserData = pListElement;
@@ -441,10 +442,44 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key)
 
       case IOCP_COMPLETE_ACCEPT_READ:
         {
-          lp_io->operation    = IOCP_WRITE;
-          GetAddrAndPort(lp_io->wsaBuf.buf, szAddress, uPort);
-          MSG(lp_io->wsaBuf.len);
-          memset(&lp_io->ol, 0, sizeof(lp_io->ol));
+
+			char szPeerAddress[20]={0};
+			struct    sockaddr_in    laddr, raddr;
+			int        laddr_len = sizeof(sockaddr_in), raddr_len = sizeof(sockaddr_in);
+			getsockname(lp_key->socket, (struct sockaddr*)&laddr, &laddr_len);
+			getpeername(lp_key->socket, (struct sockaddr*)&raddr, &raddr_len);
+			char* ip1 = inet_ntoa(raddr.sin_addr);
+			sprintf(szPeerAddress, "%s:%d", ip1, raddr.sin_port);
+
+			int aa=5;
+
+
+
+
+
+          //char szPeerAddress[50];
+          //SOCKADDR_IN *addrClient = NULL, *addrLocal = NULL;
+          //char ip[50] = {0};
+          //int nClientLen = sizeof(SOCKADDR_IN), nLocalLen = sizeof(SOCKADDR_IN);
+          //lpGetAcceptExSockaddrs(lp_io->buf, 0, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&addrLocal, &nLocalLen, (LPSOCKADDR*)&addrClient, &nClientLen);
+          //char* ip1 = inet_ntoa(addrClient->sin_addr);
+          //sprintf(szPeerAddress, "%s:%d", ip1, addrClient->sin_port);
+          //CListTextElementUI* pListElement = new CListTextElementUI;
+          //m_plistuser->Add(pListElement);
+          //lp_io->pUserData = pListElement;
+          //// m_pData->SetText(gstring::int2str((int)pListElement, 16).c_str());
+          //char vvv[20] = {0};
+          //int n = m_plistuser->GetCount();
+          //sprintf(vvv, "%d", n);
+          //pListElement->SetText(0, vvv);
+          //pListElement->SetText(1, szPeerAddress);
+          //sprintf(vvv, "%p", lp_io);
+          //pListElement->SetText(2, vvv);
+          //sprintf(vvv, "%p", lp_key);
+          //pListElement->SetText(3, vvv);
+          //glog::GetInstance()->AddLine("客户端上线:%s lp_io:%p     lp_key:%p", szPeerAddress, lp_io, lp_key);
+          //PostLog("客户端上线:%s lp_io:%p     lp_key:%p", szPeerAddress, lp_io, lp_key);
+          //lp_io->operation    = IOCP_READ;
         }
         break;
 
@@ -1390,16 +1425,106 @@ DWORD CIOCP::CompletionRoutine(LPVOID lp_param)
 
       if(bRet && lp_io)
         {
-          int op_len = 0;
-          int op = 0;
-          op_len = sizeof(op);
-          nRet = getsockopt(lp_io->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
-          int nn = 4;
-
-          if(lp_io->operation == IOCP_ACCEPT)
+          switch(lp_io->operation)
             {
-				lp_io->state = SOCKET_STATE_CONNECT;
-				if(dwBytes > 0)     lp_io->state = SOCKET_STATE_CONNECT_AND_READ;
+              case IOCP_ACCEPT:
+                {
+                  lp_io->state = SOCKET_STATE_CONNECT;
+
+                  if(dwBytes > 0)     lp_io->state = SOCKET_STATE_CONNECT_AND_READ;
+
+                  nRet = setsockopt(lp_io->socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&lp_this->m_listen_socket, sizeof(lp_this->m_listen_socket));
+
+                  if(SOCKET_ERROR == nRet)
+                    {
+                      glog::GetInstance()->AddLine("CompletionRoutine->IOCP_ACCEPT setsockopt ErroCode:%d", WSAGetLastError());
+                      closesocket(lp_io->socket);
+                      lp_this->m_io_group.RemoveAt(lp_io);
+                      glog::traceErrorInfo("setsockopt", WSAGetLastError());
+                      continue;
+                    }
+
+                  lp_new_key = lp_this->m_key_group.GetBlank();
+
+                  if(lp_new_key == NULL)
+                    {
+                      glog::GetInstance()->AddLine("CompletionRoutine->IOCP_ACCEPT m_key_group.GetBlank ErroCode:%d", WSAGetLastError());
+                      glog::traceErrorInfo("GetBlank：", WSAGetLastError());
+                      closesocket(lp_io->socket);
+                      lp_this->m_io_group.RemoveAt(lp_io);
+                      continue;
+                    }
+
+                  lp_new_key->socket = lp_io->socket;
+                  lp_io->lp_key = lp_new_key;
+                  //将新建立的SOCKET同完成端口关联起来。
+                  hRet = CreateIoCompletionPort((HANDLE)lp_io->socket, lp_this->m_h_iocp, (DWORD)lp_new_key, 0);
+
+                  if(NULL == hRet)
+                    {
+                      glog::GetInstance()->AddLine("CompletionRoutine->IOCP_ACCEPT CreateIoCompletionPort ErroCode:%d", WSAGetLastError());
+                      glog::traceErrorInfo("CreateIoCompletionPort", WSAGetLastError());
+                      closesocket(lp_io->socket);
+                      lp_this->m_key_group.RemoveAt(lp_new_key);
+                      lp_this->m_io_group.RemoveAt(lp_io);
+                      continue;
+                    }
+
+                  //处理读取到的数据
+                  if(dwBytes > 0)
+                    {
+                      lp_io->wsaBuf.len = dwBytes;
+                      lp_this->HandleData(lp_io, IOCP_COMPLETE_ACCEPT_READ, lp_new_key);
+                      bRet = lp_this->DataAction(lp_io, lp_new_key);
+
+                      if(FALSE == bRet)
+                        {
+                          continue;
+                        }
+                    }
+                  else
+                    {
+                      lp_this->HandleData(lp_io, IOCP_COMPLETE_ACCEPT, lp_new_key);
+                      bRet = lp_this->DataAction(lp_io, lp_new_key);
+
+                      if(FALSE == bRet)
+                        {
+                          continue;
+                        }
+                    }
+                }
+                break;
+
+              case IOCP_READ:
+                {
+                  lp_this->dealRead(lp_io, lp_key);
+ToMsg:
+                  bRet = lp_this->DataAction(lp_io, lp_new_key);
+
+                  if(FALSE == bRet)
+                    {
+                      continue;
+                    }
+                }
+                break;
+
+              case IOCP_WRITE:
+                {
+                  lp_this->HandleData(lp_io, IOCP_COMPLETE_WRITE, lp_new_key);
+                  bRet = lp_this->DataAction(lp_io, lp_new_key);
+
+                  if(FALSE == bRet)
+                    {
+                      continue;
+                    }
+                }
+                break;
+
+              default:
+                {
+                  continue;
+                }
+                break;
             }
         }
 
