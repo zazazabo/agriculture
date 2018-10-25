@@ -8,7 +8,7 @@
     <HorizontalLayout name="header" height="36" bkcolor="#FF5B9BD5">
       <HorizontalLayout>
         <Control width="10"/>
-        <Label name="apptitle" text="华铭路灯控制服务端" font="1" textcolor="#FFFFFFFF" />
+        <Label name="apptitle" text="农业系统服务端" font="1" textcolor="#FFFFFFFF" />
       </HorizontalLayout>
       <HorizontalLayout height="25" width="96">
         <Button name="minbtn" tooltip="最小化" height="18" width="26" normalimage="file=&apos;res/minimize.png&apos;" hotimage="file=&apos;res/minimize_h.png&apos;" pushedimage="file=&apos;res/minimize_p.png&apos;"/>

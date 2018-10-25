@@ -98,9 +98,8 @@ void CMainFrame::Init()
   glog::GetInstance()->AddLine("aa");
   dbopen = new CDBOperation();
   BOOL bcon = dbopen->ConnToDB(source, database, uname, upass);
-  glog::GetInstance()->AddLine("bb:%d", bcon);
-  setOnline("1=1", 0);
-  glog::GetInstance()->AddLine("cc");
+  glog::GetInstance()->AddLine("conn:%d", bcon);
+
   ////dealSql("17020101", "2018-09-28", "bbb", "activepower");
   this->m_hParanWnd = this->m_hWnd;
   this->CenterWindow();
