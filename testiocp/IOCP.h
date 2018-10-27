@@ -169,7 +169,7 @@ private:
     int  buidByte(string comaddr, BYTE C, BYTE AFN, BYTE SEQ, SHORT DA, SHORT DT, vector<BYTE>&v_b, BYTE des[]);
     void   CheckForInvalidConnection();
     void       ExitSocket(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key, int errcode);
-    BOOL       dealRead(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key);
+    BOOL       dealRead(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key,DWORD dwByte);
 	void	   dealAccectEx(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key,DWORD dwByte);
 };
 

@@ -98,8 +98,9 @@ void CMainFrame::Init()
   glog::GetInstance()->AddLine("aa");
   dbopen = new CDBOperation();
   BOOL bcon = dbopen->ConnToDB(source, database, uname, upass);
+  string str = bcon == TRUE ? "数据库连接不成功" : "数据库连接成功";
+  PostLog("%s", str.c_str());
   glog::GetInstance()->AddLine("conn:%d", bcon);
-
   ////dealSql("17020101", "2018-09-28", "bbb", "activepower");
   this->m_hParanWnd = this->m_hWnd;
   this->CenterWindow();
