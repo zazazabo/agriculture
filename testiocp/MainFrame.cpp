@@ -69,6 +69,17 @@ CMainFrame::~CMainFrame(void)
 
 void CMainFrame::Init()
 {
+
+
+	unsigned char hexData[6] = {
+		0x01, 0x03, 0x17, 0xD0, 0x00, 0x02 
+	};
+
+
+	USHORT crc16 = usMBCRC16(hexData,sizeof(hexData));
+
+
+
     map<int, string>m_vvv;
     m_vvv.insert(pair<int, string>(50, "aaa"));
 	string aa= m_vvv[0];
@@ -797,4 +808,18 @@ void CMainFrame::ShowTrayIcon()
     AppendMenu(hMenu, MF_STRING, ID_SHOW, TEXT("显示主界面"));
     AppendMenu(hMenu, MF_STRING, ID_EXIT, TEXT("退出"));
     WM_TaskbarRestart = RegisterWindowMessage(TEXT("TaskbarCreated"));
+}
+
+USHORT CMainFrame::usMBCRC16(UCHAR * pucFrame, USHORT usLen)
+{
+	UCHAR ucCRCHi = 0xFF;
+	UCHAR ucCRCLo = 0xFF;
+	int iIndex;
+	while(usLen--)
+	{
+		iIndex = ucCRCLo ^ *(pucFrame++);
+		ucCRCLo = (UCHAR)(ucCRCHi ^ aucCRCHi[iIndex]);
+		ucCRCHi = aucCRCLo[iIndex];
+	}
+	return (USHORT)(ucCRCHi << 8 | ucCRCLo);
 }
