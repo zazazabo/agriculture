@@ -238,8 +238,6 @@ void ShowTrayIcon(HWND m_hWnd)
 
 
 
-
-
 int APIENTRY WinMain(HINSTANCE hInstance,
                      HINSTANCE hPrevInstance,
                      LPSTR     lpCmdLine,
@@ -250,23 +248,20 @@ int APIENTRY WinMain(HINSTANCE hInstance,
   //string  jsondata = "55";
   //BOOL bRet =  reader.parse(jsondata.c_str(), root, FALSE);
   //int nnn = 5;
-
   //for(int i = 0; i < 20; i++)
   //  {
   //    switch(nnn)
   //      {
   //        case 1:
   //          break;
-
   //        case  2:
   //          break;
-
   //        case  5:
   //          continue;
   //      }
-
-	 // int nnn=7;
+  // int nnn=7;
   //  }
+
 
   hInst = hInstance;
   gstring::setIcon(NULL, IDI_ICON1);
@@ -362,3 +357,5 @@ DWORD WINAPI ThreadProc()
   show();
   return 1;
 }
+
+
