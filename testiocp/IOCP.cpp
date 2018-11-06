@@ -170,9 +170,69 @@ void CIOCP::Notify(TNotifyUI& msg)
                 m_plistuser->Remove(p1);
             }
         }
-        else if(msg.pSender->GetName() == "checklamp")
+        else if(msg.pSender->GetName() == "sendcrc")
         {
-            int aa = 4;
+            int n = m_plistuser->GetCurSel();
+            string lpiostr =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 2);
+            string lpkeystr =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 3);
+            string data =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 4);
+            IOCP_IO_PTR io = (IOCP_IO_PTR)strtol(lpiostr.c_str(), NULL, 16);
+            IOCP_KEY_PTR ik = (IOCP_KEY_PTR)strtol(lpiostr.c_str(), NULL, 16);
+
+            if(io == 0 || ik == 0)
+            {
+                PostLog("请选择列表");
+                return;
+            }
+
+            string   vvv = gstring::replace(data, " ", "");
+            char* p1 = (char*)vvv.c_str();
+            BYTE b2[1024] = {0};
+            int i = 0;
+
+            while(*p1 != '\0')
+            {
+                char data[3] = {0};
+                memcpy(data, p1, 2);
+                b2[i] = strtol(data, NULL, 16);
+                p1 += 2;
+                i++;
+            }
+
+            SHORT crc16 = usMBCRC16(b2, i);
+            b2[i] = crc16 & 0xff;
+            b2[i + 1] = crc16 >> 8 & 0xff;
+            int sendlen = i + 2;
+            InitIoContext(io);
+            memcpy(io->buf, b2, sendlen);
+            io->wsaBuf.len = sendlen;
+            io->wsaBuf.buf = io->buf;
+            io->operation = IOCP_WRITE;
+            DataAction(io, ik);
+        }
+        else if(msg.pSender->GetName() == "sendconfig")
+        {
+            string str = m_cmbworkmode->GetText();
+            str.append("\r\n");
+            PostLog("发送的指命令:%s", str.c_str());
+            int n = m_plistuser->GetCurSel();
+
+            if(n == -1)
+            {
+                PostLog("请勾选列表");
+                return;
+            }
+
+            string lpiostr =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 2);
+            string lpkeystr =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 3);
+            IOCP_IO_PTR io = (IOCP_IO_PTR)strtol(lpiostr.c_str(), NULL, 16);
+            IOCP_KEY_PTR ik = (IOCP_KEY_PTR)strtol(lpiostr.c_str(), NULL, 16);
+            InitIoContext(io);
+            memcpy(io->buf, str.c_str(), str.size());
+            io->wsaBuf.len = str.size();
+            io->wsaBuf.buf = io->buf;
+            io->operation = IOCP_WRITE;
+            DataAction(io, ik);
         }
     }
 }
@@ -428,7 +488,16 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key, DWORD
                 pListElement->SetText(3, vvv);
                 glog::GetInstance()->AddLine("客户端上线:%s lp_io:%p     lp_key:%p", szPeerAddress, lp_io, lp_key);
                 PostLog("客户端上线:%s lp_io:%p     lp_key:%p", szPeerAddress, lp_io, lp_key);
-                lp_io->operation    = IOCP_READ;
+                lp_io->operation    = IOCP_WRITE;
+                memset(lp_io->buf, 0, BUFFER_SIZE);
+                unsigned char hexData[6] =
+                {
+                    0x61, 0x62, 0x63, 0x64, 0x65, 0x66
+                };
+                memcpy(lp_io->buf, hexData, sizeof(hexData));
+                lp_io->wsaBuf.buf = lp_io->buf;
+                lp_io->wsaBuf.len = sizeof(hexData);
+                lp_io->operation = IOCP_WRITE;
             }
             break;
 
@@ -474,37 +543,37 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key, DWORD
                 pListElement->SetText(7, lenstr);
                 glog::GetInstance()->AddLine("客户端上线:%s lp_io:%p     lp_key:%p", szPeerAddress, lp_io, lp_key);
                 PostLog("客户端上线:%s lp_io:%p     lp_key:%p", szPeerAddress, lp_io, lp_key);
-                //string req = lp_io->buf;
-                //            string res;
-                //            int wsconn = wsHandshake(req, res);
-                //            if(wsconn == WS_STATUS_CONNECT)
-                //            {
-                //                InitIoContext(lp_io);
-                //                //lp_io->operation = IOCP_WRITE;
-                //                lp_io->fromtype = SOCKET_FROM_WEBSOCKET;
-                //                pListElement->SetText(8, "web客户端(2)");
-                //                strcpy(lp_io->gayway, "web客户端(2)");
-                //                memcpy(lp_io->buf, res.c_str(), res.size());
-                //                PostLog("web端上线....");
-                //                lp_io->wsaBuf.len = res.size();
-                //                lp_io->operation = IOCP_WRITE;
-                //                break;
-                //            }
-                //            if(checkFlag((BYTE*)lp_io->buf, dwByte))
-                //            {
-                //                buildcode((BYTE*)lp_io->buf, dwByte, lp_io);
-                //                pListElement->SetText(8, lp_io->gayway);
-                //                break;
-                //            }
-                memset(lp_io->buf, 0, BUFFER_SIZE);
-                unsigned char hexData[6] =
+                string req = lp_io->buf;
+                string res;
+                int wsconn = wsHandshake(req, res);
+
+                if(wsconn == WS_STATUS_CONNECT)
                 {
-                    0x61, 0x62, 0x63, 0x64, 0x65, 0x66
-                };
-                memcpy(lp_io->buf, hexData, sizeof(hexData));
-                lp_io->wsaBuf.buf = lp_io->buf;
-                lp_io->wsaBuf.len = sizeof(hexData);
-                lp_io->operation = IOCP_WRITE;
+                    InitIoContext(lp_io);
+                    //lp_io->operation = IOCP_WRITE;
+                    lp_io->fromtype = SOCKET_FROM_WEBSOCKET;
+                    pListElement->SetText(8, "web客户端(2)");
+                    strcpy(lp_io->gayway, "web客户端(2)");
+                    memcpy(lp_io->buf, res.c_str(), res.size());
+                    PostLog("web端上线....");
+                    lp_io->wsaBuf.len = res.size();
+                    lp_io->operation = IOCP_WRITE;
+                    break;
+                }
+                else
+                {
+     
+
+					memset(lp_io->buf, 0, BUFFER_SIZE);
+					unsigned char hexData[6] =
+					{
+						0x61, 0x62, 0x63, 0x64, 0x65, 0x66
+					};
+					memcpy(lp_io->buf, hexData, sizeof(hexData));
+					lp_io->wsaBuf.buf = lp_io->buf;
+					lp_io->wsaBuf.len = sizeof(hexData);
+					lp_io->operation = IOCP_WRITE;
+                }
             }
             break;
 
@@ -710,7 +779,6 @@ void CIOCP::DealWebsockMsg(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key, string json
     PostLog("长度:%d web端命令:%s ", len, jsondata.c_str());
     Json::Value root;
     Json::Reader reader;
-    jsondata = "555";
 
     if(reader.parse(jsondata.c_str(), root))
     {
@@ -722,29 +790,6 @@ void CIOCP::DealWebsockMsg(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key, string json
 
             if(msgType.isString() && tosend.isString() && tosend != "")
             {
-                if(msgType == "CheckLamp")
-                {
-                    Json::Value pid = root["val"];
-
-                    if(!pid.isNull())
-                    {
-                        memset(m_pid, 0, 216);
-                        strcpy(m_pid, pid.asString().c_str());
-                        PostThreadMessageA(ThreadId, WM_USER + 3, (WPARAM)m_pid, NULL);
-                    }
-                }
-                else if(msgType == "CheckLoop")
-                {
-                    Json::Value pid = root["val"];
-
-                    if(!pid.isNull())
-                    {
-                        memset(m_pid, 0, 216);
-                        strcpy(m_pid, pid.asString().c_str());
-                        PostThreadMessageA(ThreadId, WM_USER + 4, (WPARAM)m_pid, NULL);
-                    }
-                }
-
                 if(msgType == "AA" || msgType == "A4" || msgType == "A5" || msgType == "AC" || msgType == "00" || msgType == "FE" || msgType == "FF")
                 {
                     string data = tosend.asString();
@@ -759,49 +804,16 @@ void CIOCP::DealWebsockMsg(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key, string json
 
                         if(ite != m_mcontralcenter.end())
                         {
-                            BYTE seq = 0;
-                            map<string, list<MSGPACK>>::iterator itmsg = m_MsgPack.find(addrarea);
-
-                            if(itmsg != m_MsgPack.end())
-                            {
-                                list<MSGPACK>v_msg = itmsg->second;
-                                seq = v_msg.begin() == v_msg.end() ? 0 : v_msg.back().seq + 1;
-                            }
-                            else
-                            {
-                                seq = 0;
-                            }
-
-                            seq = seq > 0xf ? 0 : seq;
-
-                            if(msgType != "00")
-                            {
-                                _MSGPACK msg = {0};
-                                msg.lp_io = lp_io;
-                                msg.seq = seq;
-                                msg.timestamp = time(NULL);
-                                msg.root = root;
-
-                                if(itmsg == m_MsgPack.end())
-                                {
-                                    list<_MSGPACK>v_msgpack;
-                                    m_MsgPack.insert(pair<string, list<MSGPACK>>(addrarea, v_msgpack));
-                                }
-
-                                itmsg = m_MsgPack.find(addrarea);
-                                itmsg->second.push_back(msg);
-                                int ncount = itmsg->second.size();
-                                PostLog("网关[%s] 消息长度[%d] 帧序号[%d]", itmsg->first.c_str(), itmsg->second.size(), seq);
-                                bitSend[13] =   bitSend[13] & 0xf0 | seq;
-                                bitSend[len - 2] = bitSend[len - 2] + seq;
-                            }
-
-                            string tosenddata = gstring::char2hex((const char*)bitSend, len);
-                            PostLog("转换后:%s 长度:%d", tosenddata.c_str(), tosenddata.size() / 2);
+                            SHORT crc16 = usMBCRC16(bitSend, len);
+                            bitSend[len] = crc16 & 0xff;
+                            bitSend[len + 1] = crc16 >> 8 & 0xff;
+                            int sendlen = len + 2;
+                            string tosenddata = gstring::char2hex((const char*)bitSend, sendlen);
+                            PostLog("转换后:%s 长度:%d", tosenddata.c_str(), sendlen);
                             IOCP_IO_PTR lp_io1 = ite->second;
-                            memcpy(lp_io1->buf, bitSend, len);
+                            memcpy(lp_io1->buf, bitSend, sendlen);
                             lp_io1->wsaBuf.buf = lp_io1->buf;
-                            lp_io1->wsaBuf.len = len;
+                            lp_io1->wsaBuf.len = sendlen;
                             lp_io1->operation = IOCP_WRITE;
                             DataAction(lp_io1, lp_io1->lp_key);
                         }
@@ -1463,8 +1475,6 @@ DWORD CIOCP::CompletionRoutine(LPVOID lp_param)
     {
         bRet = GetQueuedCompletionStatus(lp_this->m_h_iocp, &dwBytes, (LPDWORD)&lp_key, &lp_ov, INFINITE);  //
         lp_io   = (IOCP_IO_PTR)lp_ov;
-        //glog::GetInstance()->AddLine("operation:%d,dwBytes:%d bRet:%d lp_key:%p lp_ov:%p m_listen_socket:%d accept socket:%d", \
-        //                             lp_io->operation, dwBytes, bRet, lp_key, lp_ov, lp_this->m_listen_socket, lp_io->socket);
 
         //退出处理
         if(dwBytes == 0 && lp_io->operation != IOCP_ACCEPT)
@@ -1479,20 +1489,19 @@ DWORD CIOCP::CompletionRoutine(LPVOID lp_param)
         //int op = 0;
         //op_len = sizeof(op);
         //nRet = getsockopt(lp_io->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
-
         //if(SOCKET_ERROR == nRet)
         //  {
         //    lp_this->PostLog("lp_io:%p errorcode:%d getsockopt", lp_io, WSAGetLastError(), lp_this->m_io_group.GetCount());
         //    closesocket(lp_io->socket);
         //    //continue;
         //  }
-
         //if(op != 0xffffffff)
         //  {
         //    lp_io->timelen = op;
         //    //glog::traceErrorInfo("getsockopt",WSAGetLastError());
         //    //glog::trace("\nlp_io:%p timelen:%d",lp_io,lp_io->timelen);
         //  }
+        EnterCriticalSection(&lp_this->crtc_sec);
 
         if(bRet && lp_io && lp_key)
         {
@@ -1574,173 +1583,7 @@ ToMsg:
             }
         }
 
-        //*lpOverlapped为空并且函数没有从完成端口取出完成包，返回值则为0。函数则不会在lpNumberOfBytes and lpCompletionKey所指向的参数中存储信息。
-//
-//      if(dwBytes == 0 && lp_key == 0 && lp_ov == 0)
-//        {
-//          int errcode = WSAGetLastError();
-//          lp_this->PostLog("完成端口已关闭");
-//          break;
-//        }
-//
-//      if(bRet == 0 && lp_io == NULL)
-//        {
-//          int errcode = WSAGetLastError();
-//          //如果 *lpOverlapped为空并且函数没有从完成端口取出完成包，返回值则为0。函数则不会在lpNumberOfBytes and lpCompletionKey所指向的参数中存储信息
-//          glog::GetInstance()->AddLine("GetQueuedCompletionStatus lp_io is NULL ErrorCode:%d", WSAGetLastError());
-//          lp_this->PostLog("GetQueuedCompletionStatus lp_io:%p bRet:%d 错误代码:%d 错误信息:%s ", lp_io, bRet, errcode, lp_this->getErrorInfo(errcode).c_str());
-//          continue;
-//        }
-//
-//      //针对: 如果 *lpOverlapped不为空并且函数从完成端口出列一个失败I/O操作的完成包，
-//      //返回值为0。函数在指向lpNumberOfBytesTransferred, lpCompletionKey, and lpOverlapped的参数指针中存储相关信息。调用GetLastError可以得到扩展错误信息
-//      if(FALSE == bRet && lp_io != NULL)
-//        {
-//          //如果 *lpOverlapped不为空并且函数从完成端口出列一个失败I/O操作的完成包，返回值为0。函数在指向lpNumberOfBytesTransferred, lpCompletionKey, and lpOverlapped的参数指针中存储相关信息
-//          int errcode = WSAGetLastError();
-//          glog::GetInstance()->AddLine("GetQueuedCompletionStatus lp_io:%p bRet:%d 错误代码:%d 错误信息:%s ", lp_io, bRet, errcode, lp_this->getErrorInfo(errcode).c_str());
-//          lp_this->PostLog("GetQueuedCompletionStatus lp_io:%p bRet:%d 错误代码:%d 错误信息:%s operation:%d", lp_io, bRet, errcode, lp_this->getErrorInfo(errcode).c_str(), lp_io->operation);
-//          lp_this->PostLog("异常退出");
-//          lp_this->ExitSocket(lp_io, lp_key, errcode);
-//          continue;
-//          //归还IO句柄；continue;
-//        }
-//
-//      //if (bRet==TRUE&&dwBytes==0)
-//      //{
-//      //  lp_this->PostLog("bRet=1 dwByte=0 errorcode:%s",lp_this->getErrorInfo(WSAGetLastError()).c_str());
-//      //}
-//
-//      //如果关联到一个完成端口的一个socket句柄被关闭了，则GetQueuedCompletionStatus返回ERROR_SUCCESS（也是0）,并且lpNumberOfBytes等于0
-//      //退出处理
-//      if((lp_io != NULL) && (IOCP_ACCEPT != lp_io->operation) && (0 == dwBytes))
-//        {
-//          lp_this->PostLog("正常退出");
-//          lp_this->ExitSocket(lp_io, lp_key, GetLastError());
-//          continue;
-//        }
-//
-//      //socket 通信时长
-//      int op_len = 0;
-//      int op = 0;
-//      op_len = sizeof(op);
-//      nRet = getsockopt(lp_io->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
-//
-//      if(SOCKET_ERROR == nRet)
-//        {
-//          lp_this->PostLog("lp_io:%p errorcode:%d getsockopt", lp_io, WSAGetLastError(), lp_this->m_io_group.GetCount());
-//          closesocket(lp_io->socket);
-//          //continue;
-//        }
-//
-//      if(op != 0xffffffff)
-//        {
-//          lp_io->timelen = op;
-//          //glog::traceErrorInfo("getsockopt",WSAGetLastError());
-//          //glog::trace("\nlp_io:%p timelen:%d",lp_io,lp_io->timelen);
-//        }
-//
-//      switch(lp_io->operation)
-//        {
-//          case IOCP_ACCEPT:
-//            {
-//              lp_io->state = SOCKET_STATE_CONNECT;
-//
-//              if(dwBytes > 0)     lp_io->state = SOCKET_STATE_CONNECT_AND_READ;
-//
-//              nRet = setsockopt(lp_io->socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&lp_this->m_listen_socket, sizeof(lp_this->m_listen_socket));
-//
-//              if(SOCKET_ERROR == nRet)
-//                {
-//                  glog::GetInstance()->AddLine("CompletionRoutine->IOCP_ACCEPT setsockopt ErroCode:%d", WSAGetLastError());
-//                  closesocket(lp_io->socket);
-//                  lp_this->m_io_group.RemoveAt(lp_io);
-//                  glog::traceErrorInfo("setsockopt", WSAGetLastError());
-//                  continue;
-//                }
-//
-//              lp_new_key = lp_this->m_key_group.GetBlank();
-//
-//              if(lp_new_key == NULL)
-//                {
-//                  glog::GetInstance()->AddLine("CompletionRoutine->IOCP_ACCEPT m_key_group.GetBlank ErroCode:%d", WSAGetLastError());
-//                  glog::traceErrorInfo("GetBlank：", WSAGetLastError());
-//                  closesocket(lp_io->socket);
-//                  lp_this->m_io_group.RemoveAt(lp_io);
-//                  continue;
-//                }
-//
-//              lp_new_key->socket = lp_io->socket;
-//              lp_io->lp_key = lp_new_key;
-//              //将新建立的SOCKET同完成端口关联起来。
-//              hRet = CreateIoCompletionPort((HANDLE)lp_io->socket, lp_this->m_h_iocp, (DWORD)lp_new_key, 0);
-//
-//              if(NULL == hRet)
-//                {
-//                  glog::GetInstance()->AddLine("CompletionRoutine->IOCP_ACCEPT CreateIoCompletionPort ErroCode:%d", WSAGetLastError());
-//                  glog::traceErrorInfo("CreateIoCompletionPort", WSAGetLastError());
-//                  closesocket(lp_io->socket);
-//                  lp_this->m_key_group.RemoveAt(lp_new_key);
-//                  lp_this->m_io_group.RemoveAt(lp_io);
-//                  continue;
-//                }
-//
-//              //处理读取到的数据
-//              if(dwBytes > 0)
-//                {
-//                  lp_io->wsaBuf.len = dwBytes;
-//                  lp_this->HandleData(lp_io, IOCP_COMPLETE_ACCEPT_READ, lp_new_key);
-//                  bRet = lp_this->DataAction(lp_io, lp_new_key);
-//
-//                  if(FALSE == bRet)
-//                    {
-//                      continue;
-//                    }
-//                }
-//              else
-//                {
-//                  lp_this->HandleData(lp_io, IOCP_COMPLETE_ACCEPT, lp_new_key);
-//                  bRet = lp_this->DataAction(lp_io, lp_new_key);
-//
-//                  if(FALSE == bRet)
-//                    {
-//                      continue;
-//                    }
-//                }
-//            }
-//            break;
-//
-//          case IOCP_READ:
-//            {
-//              lp_this->dealRead(lp_io, lp_key);
-//ToMsg:
-//              bRet = lp_this->DataAction(lp_io, lp_new_key);
-//
-//              if(FALSE == bRet)
-//                {
-//                  continue;
-//                }
-//            }
-//            break;
-//
-//          case IOCP_WRITE:
-//            {
-//              lp_this->HandleData(lp_io, IOCP_COMPLETE_WRITE, lp_new_key);
-//              bRet = lp_this->DataAction(lp_io, lp_new_key);
-//
-//              if(FALSE == bRet)
-//                {
-//                  continue;
-//                }
-//            }
-//            break;
-//
-//          default:
-//            {
-//              continue;
-//            }
-//            break;
-//        }
+        LeaveCriticalSection(&lp_this->crtc_sec);
     }
 
     return 0;
@@ -2132,760 +1975,6 @@ void CIOCP::buildcode(BYTE src[], int srclen, IOCP_IO_PTR & lp_io)
             }
         }
     }
-    else if(AFN == 0x00 || AFN == 0xAA || AFN == 0xA4 || AFN == 0xFF || AFN == 0xFE) //全部确认
-    {
-        if(DirPrmCode == 0x80 && con == 0x0 && FC == 0x8)   //  上行 从动 响应帧   0x80 上行 从动
-        {
-            // PostLog("响应 AFN:%d", AFN);
-            map<string, list<MSGPACK>>::iterator itmsg = m_MsgPack.find(addrarea);
-            Json::Value root;
-
-            if(itmsg != m_MsgPack.end())
-            {
-                list<MSGPACK>v_msg = itmsg->second;
-
-                if(v_msg.size() > 0)
-                {
-                    MSGPACK msgEnd = v_msg.back();
-                    IOCP_IO_PTR lp_io1 = NULL;
-
-                    if(msgEnd.seq == frame)
-                    {
-                        lp_io1 = msgEnd.lp_io;
-                        itmsg->second.pop_back();
-                        root = msgEnd.root;
-
-                        if(itmsg->second.size() > 0)
-                        {
-                            MSGPACK msgEnd = itmsg->second.back();
-                            time_t tmnow = time(NULL);
-                            float t = (float)(tmnow - msgEnd.timestamp) / 60;
-                            PostLog("最后消息队列帧:%d 驻留分钟数%0.2f分", msgEnd.seq, t);
-
-                            if(t > 1)
-                            {
-                                itmsg->second.clear();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        //EnterCriticalSection(&crtc_sec);
-                        list<MSGPACK>::iterator it = itmsg->second.begin();
-                        time_t tmnow = time(NULL);
-
-                        while(it != itmsg->second.end())
-                        {
-                            MSGPACK pack = *it;
-                            float t = float(tmnow - pack.timestamp) / 60;
-
-                            if(t > 1)
-                            {
-                                PostLog("消息队列帧:%d 驻留分钟数%0.2f分", pack.seq, t);
-                                itmsg->second.erase((it++));
-                                continue;
-                            }
-
-                            if(pack.seq == frame)
-                            {
-                                root = pack.root;
-                                lp_io1 = pack.lp_io;
-                                itmsg->second.erase((it++));
-                            }
-
-                            it++;
-                        }
-
-                        //LeaveCriticalSection(&crtc_sec);
-                        //                list<MSGPACK>::reverse_iterator it = itmsg->second.rbegin();
-                        //                while(it != itmsg->second.rend())
-                        //                {
-                        //time_t tmnow = time(NULL);
-                        //                    MSGPACK pack = *it;
-                        //                    float t = float(tmnow - pack.timestamp) / 60;
-                        //                    PostLog("消息队列帧:%d 驻留分钟数%0.2f分",pack.seq, t);
-                        //                    if(t > 1)
-                        //                    {
-                        //                        itmsg->second.erase((++it).base());
-                        //                        continue;
-                        //                    }
-                        //                    if(pack.seq == frame)
-                        //                    {
-                        //                        lp_io1 = pack.lp_io;
-                        //                        itmsg->second.erase((++it).base());
-                        //                        break;
-                        //                    }
-                        //                    it++;
-                        //                }
-                        //  LeaveCriticalSection(&crtc_sec);
-                    }
-
-                    if(lp_io1 != NULL)
-                    {
-                        root["status"] = "success";
-                        root["frame"] = frame;
-                        root["comaddr"] = addrarea;
-                        root["data"] = gstring::char2hex((const char*)src, srclen);
-                        root["length"] = srclen;
-                        string inmsg = root.toStyledString();
-                        char outmsg[1048] = {0};
-                        int lenret = 0;
-                        int len = wsEncodeFrame(inmsg, outmsg, WS_TEXT_FRAME, lenret);
-
-                        if(len != WS_ERROR_FRAME)
-                        {
-                            memcpy(lp_io1->buf, outmsg, lenret);
-                            lp_io1->wsaBuf.buf = lp_io1->buf;
-                            lp_io1->wsaBuf.len = lenret;
-                            lp_io1->operation = IOCP_WRITE;
-                            DataAction(lp_io1, lp_io1->lp_key);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    else if(AFN == 0xAC)
-    {
-        //请求一类数据
-        time_t tmtamp;
-        struct tm *tm1 = NULL;
-        time(&tmtamp) ;
-        tm1 = localtime(&tmtamp) ;
-        tm1->tm_mday--;
-        mktime(tm1);
-        char myday[30] = {0};
-        strftime(myday, sizeof(myday), "%Y-%m-%d", tm1);
-        PostLog("昨天日期:%s", myday);
-
-        if(DirPrmCode == 0x80 && con == 0x0 && FC == 0x8)   //  上行 从动 响应帧   0x80 上行 从动
-        {
-            //三相电压
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x4 && DT[1] == 0x4)
-            {
-                BYTE* p1 = src;
-                Json::Value jsonRoot;
-                int p = 0;
-                string strA;
-                string strB;
-                string strC;
-
-                for(int i = 18; i < srclen - 2; i += 6)
-                {
-                    BYTE A1[2] = {0};
-                    BYTE B1[2] = {0};
-                    BYTE C1[2] = {0};
-                    memcpy(A1, &src[i], 2);
-                    memcpy(B1, &src[i + 2], 2);
-                    memcpy(C1, &src[i + 4], 2);
-                    char strA1[16] = {0};
-                    char strB1[16] = {0};
-                    char strC1[16] = {0};
-                    BYTE b = A1[1] >> 4 & 0x0f;
-                    BYTE s = A1[1] & 0x0f;
-                    BYTE g = A1[0] >> 4 & 0x0f;
-                    BYTE sfw = A1[0] & 0x0f;
-                    sprintf(strA1, "%d%d%d.%d", b, s, g, sfw);
-                    b = B1[1] >> 4 & 0x0f;
-                    s = B1[1] & 0x0f;
-                    g = B1[0] >> 4 & 0x0f;
-                    sfw = B1[0] & 0x0f;
-                    sprintf(strB1, "%d%d%d.%d", b, s, g, sfw);
-                    b = C1[1] >> 4 & 0x0f;
-                    s = C1[1] & 0x0f;
-                    g = C1[0] >> 4 & 0x0f;
-                    sfw = C1[0] & 0x0f;
-                    sprintf(strC1, "%d%d%d.%d", b, s, g, sfw);
-                    strA.append(strA1);
-                    strA.append("|");
-                    strB.append(strB1);
-                    strB.append("|");
-                    strC.append(strC1);
-                    strC.append("|");
-                    p += 1;
-                }
-
-                clearEndChar(strA, "|");
-                clearEndChar(strB, "|");
-                clearEndChar(strC, "|");
-                jsonRoot["len"] = p;
-                jsonRoot["A"] = strA;
-                jsonRoot["B"] = strB;
-                jsonRoot["C"] = strC;
-                string inmsg = jsonRoot.toStyledString();
-                dealSqlRecords(addrarea, myday, inmsg, "voltage");
-                return;
-            }
-
-            //三相电流
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x20 && DT[1] == 0x4)
-            {
-                BYTE* p1 = src;
-                Json::Value jsonRoot;
-                int p = 0;
-                string strA;
-                string strB;
-                string strC;
-
-                for(int i = 18; i < srclen - 2; i += 9)
-                {
-                    BYTE A1[3] = {0};
-                    BYTE B1[3] = {0};
-                    BYTE C1[3] = {0};
-                    memcpy(A1, &src[i], 3);
-                    memcpy(B1, &src[i + 3], 3);
-                    memcpy(C1, &src[i + 6], 3);
-                    char strA1[16] = {0};
-                    char strB1[16] = {0};
-                    char strC1[16] = {0};
-                    BYTE b = A1[2] >> 4 & 0x0f;
-                    BYTE s = A1[2] & 0x0f;
-                    BYTE g = A1[1] >> 4 & 0x0f;
-                    BYTE sfw = A1[1] & 0x0f;
-                    BYTE bfw = A1[0] >> 4 & 0x0f;
-                    BYTE qfw = A1[0] & 0x0f;
-                    sprintf(strA1, "%d%d%d.%d%d%d", b, s, g, sfw, bfw, qfw);
-                    b = B1[2] >> 4 & 0x0f;
-                    s = B1[2] & 0x0f;
-                    g = B1[1] >> 4 & 0x0f;
-                    sfw = B1[1] & 0x0f;
-                    bfw = B1[0] >> 4 & 0x0f;
-                    qfw = B1[0] & 0x0f;
-                    sprintf(strB1, "%d%d%d.%d%d%d", b, s, g, sfw, bfw, qfw);
-                    b = C1[2] >> 4 & 0x0f;
-                    s = C1[2] & 0x0f;
-                    g = C1[1] >> 4 & 0x0f;
-                    sfw = C1[1] & 0x0f;
-                    bfw = C1[0] >> 4 & 0x0f;
-                    qfw = C1[0] & 0x0f;
-                    sprintf(strC1, "%d%d%d.%d%d%d", b, s, g, sfw, bfw, qfw);
-                    strA.append(strA1);
-                    strA.append("|");
-                    strB.append(strB1);
-                    strB.append("|");
-                    strC.append(strC1);
-                    strC.append("|");
-                    p += 1;
-                }
-
-                clearEndChar(strA, "|");
-                clearEndChar(strB, "|");
-                clearEndChar(strC, "|");
-                jsonRoot["len"] = p;
-                jsonRoot["A"] = strA;
-                jsonRoot["B"] = strB;
-                jsonRoot["C"] = strC;
-                string inmsg = jsonRoot.toStyledString();
-                dealSqlRecords(addrarea, myday, inmsg, "electric");
-                return;
-            }
-
-            //三相有功功率
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x01 && DT[1] == 0x03)
-            {
-                BYTE* p1 = src;
-                Json::Value jsonRoot;
-                int p = 0;
-                string strA;
-                string strB;
-                string strC;
-
-                for(int i = 18; i < srclen - 2; i += 9)
-                {
-                    BYTE A1[3] = {0};
-                    BYTE B1[3] = {0};
-                    BYTE C1[3] = {0};
-                    memcpy(A1, &src[i], 3);
-                    memcpy(B1, &src[i + 3], 3);
-                    memcpy(C1, &src[i + 6], 3);
-                    char strA1[16] = {0};
-                    char strB1[16] = {0};
-                    char strC1[16] = {0};
-                    BYTE s = A1[2] >> 4 & 0x0f;
-                    BYTE g = A1[2] & 0x0f;
-                    BYTE sfw = A1[1] >> 4 & 0x0f;
-                    BYTE bfw = A1[1] & 0x0f;
-                    BYTE qfw = A1[0] >> 4 & 0x0f;
-                    BYTE wfw = A1[0] & 0x0f;
-                    sprintf(strA1, "%d%d.%d%d%d%d", s, g, sfw, bfw, qfw, wfw);
-                    s = B1[2] >> 4 & 0x0f;
-                    g = B1[2] & 0x0f;
-                    sfw = B1[1] >> 4 & 0x0f;
-                    bfw = B1[1] & 0x0f;
-                    qfw = B1[0] >> 4 & 0x0f;
-                    wfw = B1[0] & 0x0f;
-                    sprintf(strB1, "%d%d.%d%d%d%d", s, g, sfw, bfw, qfw, wfw);
-                    s = C1[2] >> 4 & 0x0f;
-                    g = C1[2] & 0x0f;
-                    sfw = C1[1] >> 4 & 0x0f;
-                    bfw = C1[1] & 0x0f;
-                    qfw = C1[0] >> 4 & 0x0f;
-                    wfw = C1[0] & 0x0f;
-                    sprintf(strC1, "%d%d.%d%d%d%d", s, g, sfw, bfw, qfw, wfw);
-                    strA.append(strA1);
-                    strA.append("|");
-                    strB.append(strB1);
-                    strB.append("|");
-                    strC.append(strC1);
-                    strC.append("|");
-                    p += 1;
-                }
-
-                clearEndChar(strA, "|");
-                clearEndChar(strB, "|");
-                clearEndChar(strC, "|");
-                jsonRoot["len"] = p;
-                jsonRoot["A"] = strA;
-                jsonRoot["B"] = strB;
-                jsonRoot["C"] = strC;
-                string inmsg = jsonRoot.toStyledString();
-                dealSqlRecords(addrarea, myday, inmsg, "activepower");
-                return;
-            }
-
-            //三相功率因数
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x40 && DT[1] == 0x03)
-            {
-                BYTE* p1 = src;
-                Json::Value jsonRoot;
-                int p = 0;
-                string strA;
-                string strB;
-                string strC;
-                string strD;
-
-                for(int i = 18; i < srclen - 2; i += 8)
-                {
-                    BYTE A1[2] = {0};
-                    BYTE B1[2] = {0};
-                    BYTE C1[2] = {0};
-                    BYTE D1[2] = {0};
-                    memcpy(A1, &src[i], 2);
-                    memcpy(B1, &src[i + 2], 2);
-                    memcpy(C1, &src[i + 4], 2);
-                    memcpy(D1, &src[i + 6], 2);
-                    char strA1[16] = {0};
-                    char strB1[16] = {0};
-                    char strC1[16] = {0};
-                    char strD1[16] = {0};
-                    BYTE g = A1[1] >> 4 & 0x0f;
-                    BYTE sfw = A1[1] & 0x0f;
-                    BYTE bfw = A1[0] >> 4 & 0x0f;
-                    BYTE qfw = A1[0] & 0x0f;
-                    sprintf(strA1, "%d.%d%d%d", g, sfw, bfw, qfw);
-                    g = B1[1] >> 4 & 0x0f;
-                    sfw = B1[1] & 0x0f;
-                    bfw = B1[0] >> 4 & 0x0f;
-                    qfw = B1[0] & 0x0f;
-                    sprintf(strB1, "%d.%d%d%d", g, sfw, bfw, qfw);
-                    g = C1[1] >> 4 & 0x0f;
-                    sfw = C1[1] & 0x0f;
-                    bfw = C1[0] >> 4 & 0x0f;
-                    qfw = C1[0] & 0x0f;
-                    sprintf(strC1, "%d.%d%d%d", g, sfw, bfw, qfw);
-                    g = D1[1] >> 4 & 0x0f;
-                    sfw = D1[1] & 0x0f;
-                    bfw = D1[0] >> 4 & 0x0f;
-                    qfw = D1[0] & 0x0f;
-                    sprintf(strD1, "%d.%d%d%d", g, sfw, bfw, qfw);
-                    strA.append(strA1);
-                    strA.append("|");
-                    strB.append(strB1);
-                    strB.append("|");
-                    strC.append(strC1);
-                    strC.append("|");
-                    strD.append(strD1);
-                    strD.append("|");
-                    p += 1;
-                }
-
-                clearEndChar(strA, "|");
-                clearEndChar(strB, "|");
-                clearEndChar(strC, "|");
-                clearEndChar(strD, "|");
-                jsonRoot["len"] = p;
-                jsonRoot["A"] = strA;
-                jsonRoot["B"] = strB;
-                jsonRoot["C"] = strC;
-                jsonRoot["D"] = strD;
-                string inmsg = jsonRoot.toStyledString();
-                dealSqlRecords(addrarea, myday, inmsg, "powerfactor");
-                return;
-            }
-
-            //正向有功电能量
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x01 && DT[1] == 0x05)
-            {
-                BYTE* p1 = src;
-                Json::Value jsonRoot;
-                int p = 0;
-                string strA;
-                float fbegin = 0;
-                float fend = 0;
-                char power00[20] = {0};
-                char power45[20] = {0};
-
-                for(int i = 18; i < srclen - 2; i += 4)
-                {
-                    BYTE A1[4] = {0};
-                    memcpy(A1, &src[i], 4);
-                    char strA1[16] = {0};
-                    BYTE sw = A1[3] >> 4 & 0x0f;
-                    BYTE w = A1[3]  & 0x0f;
-                    BYTE q = A1[2] >> 4 & 0x0f;
-                    BYTE b = A1[2]  & 0x0f;
-                    BYTE s = A1[1] >> 4 & 0x0f;
-                    BYTE g = A1[1] & 0x0f;
-                    BYTE sfw = A1[0] >> 4 & 0x0f;
-                    BYTE bfw = A1[0] & 0x0f;
-                    sprintf(strA1, "%d%d%d%d%d%d.%d%d", sw, w, q, b, s, g, sfw, bfw);
-                    strA.append(strA1);
-                    strA.append("|");
-                    p += 1;
-
-                    if(i == 18)
-                    {
-                        fbegin = atof(strA1);
-                        strcpy(power00, strA1);
-                    }
-
-                    int n1 = i + 4;
-
-                    if(n1 >= srclen - 2)
-                    {
-                        fend = atof(strA1);
-                        strcpy(power45, strA1);
-                    }
-                }
-
-                PostLog("begin:%0.2f  end:%0.2f", fbegin, fend);
-                clearEndChar(strA, "|");
-                float fenergy = fend - fbegin;
-                char  strenergy[20] = {0};
-                sprintf(strenergy, "%0.2f", fenergy);
-                jsonRoot["len"] = p;
-                jsonRoot["A"] = strA;
-                jsonRoot["energy"] = strenergy;
-                string inmsg = jsonRoot.toStyledString();
-                dealSqlRecords(addrarea, myday, inmsg, "power");
-                dealSqlPower(addrarea, myday, power00, power45);
-                string sql = "UPDATE t_power SET POWER45=\'";
-                sql.append(power00);
-                sql.append("\'");
-                sql.append(" WHERE id=(select top 1 id from t_power  WHERE DAY < CONVERT(datetime,\'");
-                sql.append(myday);
-                sql.append("\',101)");
-                sql.append(" and comaddr=\'");
-                sql.append(addrarea);
-                sql.append("\')");
-                _RecordsetPtr rs = dbopen->ExecuteWithResSQL(sql.c_str());
-
-                if(rs == NULL)
-                {
-                    glog::GetInstance()->AddLine("更新电能量出错:%s", sql.c_str());
-                }
-
-                //::SendMessageA(this->m_hParanWnd, WM_USER + 2, (WPARAM)sql.c_str(), (LPARAM)0);
-                return;
-            }
-
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x40 && DT[1] == 0x00)
-            {
-                int z = 18;
-                BYTE len = src[z];
-                z = z + 1;
-
-                for(int i = 0; i < len; i++)
-                {
-                    int l_code = src[z + 1] * 256 + src[z];
-                    //电压
-                    z = z + 2;
-                    int bw = src[z + 1] >> 4 & 0xf;
-                    int sw = src[z + 1] & 0xf;
-                    int gw = src[z] >> 4 & 0xf;
-                    int sfw = src[z] & 0xf;
-                    char voltage[20] = {0};
-                    sprintf(voltage, "%d%d%d.%d", bw, sw, gw, sfw);
-                    //电流
-                    z = z + 2;
-                    sw = src[z + 1] >> 4 & 0xf;
-                    gw = src[z + 1] & 0xf;
-                    sfw = src[z] >> 4 & 0xf;
-                    int bfw = src[z] & 0xf;
-                    char electric[20] = {0};
-                    sprintf(electric, "%d%d.%d%d", sw, gw, sfw, bfw);
-                    //有功功率
-                    z = z + 2;
-                    int qw = src[z + 3] >> 4 & 0xf;
-                    bw = src[z + 3] & 0xf;
-                    sw = src[z + 2] >> 4 & 0xf;
-                    gw = src[z + 2] & 0xf;
-                    sfw = src[z + 1] >> 4 & 0xf;
-                    bfw = src[z + 1] & 0xf;
-                    int qfw = src[z] >> 4 & 0xf;
-                    int wfw = src[z] & 0xf;
-                    char activepower[20] = {0};
-                    sprintf(activepower, "\n%d%d%d.%d%d%d%d", qw, bw, gw, sfw, bfw, qfw, wfw);
-                    //灯控器状态
-                    z = z + 4;
-                    int s1 = src[z];
-                    int s2 = src[z + 1];
-                    int s3 = src[z + 2];
-                    int s4 = src[z + 3];
-                    string faultdesc = "";
-
-                    for(int u = 0; u < 8; u++)
-                    {
-                        //s3>>u&0x1;
-                        if(s3 >> u & 0x1 == 0x1)
-                        {
-                            faultdesc = faultdesc + v_fault[u];
-                        }
-                    }
-
-                    //调光值
-                    z = z + 4;
-                    int l_value = src[z];
-                    //温度
-                    z = z + 2;
-                    char temperature[20] = {0};
-                    SHORT temp = src[z + 1];
-                    src[z] == 1 ? sprintf(temperature, "-%d", temp) : sprintf(temperature, "%d", temp);
-                    z = z + 2;
-                    BYTE ms = src[z + 3] >> 4 & 0xf;
-                    BYTE mg = src[z + 3] & 0xf;
-                    BYTE ds = src[z + 2] >> 4 & 0xf;
-                    BYTE dg = src[z + 2] & 0xf;
-                    BYTE hs = src[z + 1] >> 4 & 0xf;
-                    BYTE hg = src[z + 1] & 0xf;
-                    BYTE mins = src[z] >> 4 & 0xf;
-                    BYTE ming = src[z] & 0xf;
-                    char readtime[30] = {0};
-                    sprintf(readtime, "%d%d-%d%d %d%d:%d%d", ms, mg, ds, dg, hs, hg, mins, ming);
-                    PostLog("网关[%s] 装置号:%d 电压:%s 电流:%s 有功功率:%s 温度:%s 调光值:%d 最近抄表时间:%s status1:%d status2:%d status3:%d status4:%d 故障描述:%s", \
-                            addrarea, l_code, voltage, electric, activepower, temperature, l_value, readtime, s1, s2, s3, s4, faultdesc.c_str());
-                    map<string, _variant_t>m_var;
-                    //dbopen->GetUpdateSql()
-                    _variant_t  vvoltage(voltage);
-                    _variant_t  velectric(electric);
-                    _variant_t  vactivepower(activepower);
-                    _variant_t  vl_value(l_value);
-                    _variant_t  vtemperature(temperature);
-                    _variant_t  vfaultdesc(faultdesc.c_str());
-                    _variant_t  vs1(s1);
-                    _variant_t  vs2(s2);
-                    _variant_t  vs3(s3);
-                    _variant_t  vs4(s4);
-                    int ifault = faultdesc != "" ? 1 : 0;
-                    _variant_t  vfault(ifault);
-                    _variant_t  vreadtime(readtime);
-                    int ipresence = 1;
-                    _variant_t  presence(readtime);
-                    m_var.insert(pair<string, _variant_t>("voltage", voltage));
-                    m_var.insert(pair<string, _variant_t>("electric", velectric));
-                    m_var.insert(pair<string, _variant_t>("activepower", vactivepower));
-                    m_var.insert(pair<string, _variant_t>("temperature", vtemperature));
-                    m_var.insert(pair<string, _variant_t>("l_faultdesc", vfaultdesc));
-                    m_var.insert(pair<string, _variant_t>("newlyread", vreadtime));
-                    m_var.insert(pair<string, _variant_t>("l_fault", vfault));
-                    m_var.insert(pair<string, _variant_t>("status1", vs1));
-                    m_var.insert(pair<string, _variant_t>("status2", vs2));
-                    m_var.insert(pair<string, _variant_t>("status3", vs3));
-                    m_var.insert(pair<string, _variant_t>("status4", vs4));
-                    m_var.insert(pair<string, _variant_t>("l_value", vl_value));
-                    m_var.insert(pair<string, _variant_t>("presence", ipresence));
-                    string where = "";
-                    where.append(" where l_code=");
-                    where.append(gstring::int2str(l_code).c_str());   //以后会变的
-                    where.append(" and l_comaddr='");
-                    where.append(addrarea);
-                    where.append("\'");
-                    string sql = dbopen->GetUpdateSql(m_var, "t_lamp", where);
-                    _RecordsetPtr rs =   dbopen->ExecuteWithResSQL(sql.c_str());
-                    //PostLog("sql:%s", sql.c_str());
-                }
-            }
-
-            map<string, list<MSGPACK>>::iterator itmsg = m_MsgPack.find(addrarea);
-            Json::Value root;
-
-            if(itmsg != m_MsgPack.end())
-            {
-                list<MSGPACK>v_msg = itmsg->second;
-
-                if(v_msg.size() > 0)
-                {
-                    MSGPACK msgEnd = v_msg.back();
-                    IOCP_IO_PTR lp_io1 = NULL;
-
-                    if(msgEnd.seq == frame)
-                    {
-                        lp_io1 = msgEnd.lp_io;
-                        itmsg->second.pop_back();
-                        root = msgEnd.root;
-
-                        if(itmsg->second.size() > 0)
-                        {
-                            MSGPACK msgEnd = itmsg->second.back();
-                            time_t tmnow = time(NULL);
-                            float t = (float)(tmnow - msgEnd.timestamp) / 60;
-                            PostLog("最后消息队列帧:%d 驻留分钟数%0.2f分", msgEnd.seq, t);
-
-                            if(t > 1)
-                            {
-                                itmsg->second.clear();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        //EnterCriticalSection(&crtc_sec);
-                        list<MSGPACK>::iterator it = itmsg->second.begin();
-                        time_t tmnow = time(NULL);
-
-                        while(it != itmsg->second.end())
-                        {
-                            MSGPACK pack = *it;
-                            float t = float(tmnow - pack.timestamp) / 60;
-
-                            if(t > 1)
-                            {
-                                PostLog("消息队列帧:%d 驻留分钟数%0.2f分", pack.seq, t);
-                                itmsg->second.erase((it++));
-                                continue;
-                            }
-
-                            if(pack.seq == frame)
-                            {
-                                root = pack.root;
-                                lp_io1 = pack.lp_io;
-                                itmsg->second.erase((it++));
-                            }
-
-                            it++;
-                        }
-                    }
-
-                    if(lp_io1 != NULL)
-                    {
-                        root["status"] = "success";
-                        root["frame"] = frame;
-                        root["comaddr"] = addrarea;
-                        root["data"] = gstring::char2hex((const char*)src, srclen);
-                        root["length"] = srclen;
-                        string inmsg = root.toStyledString();
-                        char outmsg[1048] = {0};
-                        int lenret = 0;
-                        int len = wsEncodeFrame(inmsg, outmsg, WS_TEXT_FRAME, lenret);
-
-                        if(len != WS_ERROR_FRAME)
-                        {
-                            memcpy(lp_io1->buf, outmsg, lenret);
-                            lp_io1->wsaBuf.buf = lp_io1->buf;
-                            lp_io1->wsaBuf.len = lenret;
-                            lp_io1->operation = IOCP_WRITE;
-                            DataAction(lp_io1, lp_io1->lp_key);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    else if(AFN == 0x0E)             //报警和故障事件
-    {
-        string a1 = gstring::char2hex((const char*)src, srclen);
-        glog::GetInstance()->AddLine("故障:%s", a1.c_str());
-        BYTE    con =    src[13] & 0x10;
-        BYTE   DirPrmCode = src[6] & 0xc0;   //上行  从动          上行  启动    1100  c0
-        BYTE   FC = src[6] & 0xF; //控制域名的功能码
-        char addr1[10] = {0};
-        memcpy(addr1, &src[7], 4);
-        string addrarea = gstring::char2hex(addr1, 4);
-        BYTE DA[2] = {0};
-        BYTE DT[2] = {0};
-        memcpy(DA, &src[14], 2);
-        memcpy(DT, &src[16], 2);
-
-        if(DirPrmCode == 0xC0 && con == 0)   //上行 启动站     主动上报故障和预警  不需要响应
-        {
-            if(DA[0] == 0 && DA[1] == 0 && DT[0] == 0x01 && DT[1] == 0x00)
-            {
-                int j = 18;
-                BYTE errcode = src[j + 0];
-                int datalen = src[j + 1];
-                BYTE min = src[j + 2];
-                BYTE hour = src[j + 3];
-                BYTE day = src[j + 4];
-                BYTE month = src[j + 5];
-                BYTE year = src[j + 6];
-                char cmin[20] = {0};
-                char chour[20] = {0};
-                char cday[20] = {0};
-                char cmonth[20] = {0};
-                char cyear[20] = {0};
-                //5字节 时间  后是内容
-                string hexdata = gstring::char2hex((const char*)&src[j + 2], datalen);
-                sprintf(cmin, "%d%d", min >> 4 & 0x0f, min & 0xf);
-                sprintf(chour, "%d%d", hour >> 4 & 0x0f, hour & 0xf);
-                sprintf(cday, "%d%d", day >> 4 & 0x0f, day & 0xf);
-                sprintf(cmonth, "%d%d", month >> 4 & 0x0f, month & 0xf);
-                sprintf(cyear, "20%d%d", year >> 4 & 0x0f, year & 0xf);
-                char date[30] = {0};
-                sprintf(date, "%s-%s-%s %s:%s%s", cyear, cmonth, cday, hour, min);
-                char err[20] = {0};
-                sprintf(err, "ERC%d", errcode);
-                string sql = "select * from t_fault where 1=1 and CONVERT(Nvarchar, f_day, 23)=\'";
-                sql.append(date);
-                sql.append("\' and f_comaddr='");
-                sql.append(addrarea);
-                sql.append("\' and f_type=\'");
-                sql.append(err);
-                sql.append("\'");
-                _RecordsetPtr rs = dbopen->ExecuteWithResSQL(sql.c_str());
-
-                if(rs && dbopen->GetNum(rs) == 0)
-                {
-                    map<string, _variant_t>m_var;
-                    _variant_t  vdate(date);
-                    _variant_t  vcomaddr(addrarea.c_str());
-                    _variant_t  verr(err);
-                    _variant_t  vdata(hexdata.c_str());
-                    _variant_t  vlen(datalen);
-                    m_var.insert(pair<string, _variant_t>("f_day", vdate));
-                    m_var.insert(pair<string, _variant_t>("f_comaddr", vcomaddr));
-                    m_var.insert(pair<string, _variant_t>("f_type", verr));
-                    m_var.insert(pair<string, _variant_t>("f_len", vlen));
-                    m_var.insert(pair<string, _variant_t>("f_data", vdata));
-                    string sql = dbopen->GetInsertSql(m_var, "t_fault");
-                    _RecordsetPtr rs1 = dbopen->ExecuteWithResSQL(sql.c_str());
-
-                    if(!rs1)
-                    {
-                        glog::GetInstance()->AddLine("插入报警事件失败:sql %s", sql.c_str());
-                    }
-
-                    string sql1 = "select * from t_people where u_pid in (select pid from t_baseinfo where comaddr=\'";
-                    sql1.append(addrarea);
-                    sql1.append("\')");
-                    _RecordsetPtr rs = dbopen->ExecuteWithResSQL(sql1.c_str());
-
-                    while(!rs->adoEOF)
-                    {
-                        _variant_t vname = rs->GetCollect("u_name");
-                        _variant_t vemail = rs->GetCollect("u_email");
-                        string name = _com_util::ConvertBSTRToString(vname.bstrVal);
-                        string email = _com_util::ConvertBSTRToString(vemail.bstrVal);
-                        objeamil.SetEmailTitle(string(err));
-                        objeamil.SetContent(a1);
-                        objeamil.AddTargetEmail(email);
-                        rs->MoveNext();
-                    }
-
-                    //objeamil.AddTargetEmail();
-                }
-            }
-        }
-    }
 }
 void CIOCP::buildConCode(BYTE src[], BYTE res[], int& len, BYTE bcon)
 {
@@ -3115,6 +2204,17 @@ BOOL CIOCP::dealRead(IOCP_IO_PTR & lp_io, IOCP_KEY_PTR & lp_key, DWORD dwBytes)
         pElement->SetText(7, lenstr);
     }
 
+	if(dwBytes > 5)
+	{
+		if(src[0] == 0x40 && src[1] == 0x44 && src[2] == 0x54 && src[3] == 0x55)
+		{
+			char info[512] = {0};
+			int nn = dwBytes > 512 ? 512 : dwBytes;
+			memcpy(info, src, nn);
+			PostLog(info);
+		}
+	}
+
     if(dwBytes == 15)
     {
         char vv[16] = {0};
@@ -3122,6 +2222,19 @@ BOOL CIOCP::dealRead(IOCP_IO_PTR & lp_io, IOCP_KEY_PTR & lp_key, DWORD dwBytes)
 
         if(_stricmp(vv, "www.cdebyte.com") == 0)
         {
+            string address = "17020101";
+            lp_io->fromtype = SOCKET_FROM_GAYWAY;
+            map<string, IOCP_IO_PTR>::iterator it = m_mcontralcenter.find(address);
+
+            if(it == m_mcontralcenter.end())
+            {
+                m_mcontralcenter.insert(pair<string, IOCP_IO_PTR>(address, lp_io));
+            }
+            else
+            {
+                it->second = lp_io;
+            }
+
             memset(lp_io->buf, 0, BUFFER_SIZE);
             unsigned char hexData[6] =
             {
@@ -3133,6 +2246,98 @@ BOOL CIOCP::dealRead(IOCP_IO_PTR & lp_io, IOCP_KEY_PTR & lp_key, DWORD dwBytes)
             lp_io->operation = IOCP_WRITE;
             DataAction(lp_io, lp_key);
         }
+    }
+
+    if(lp_io->fromtype == SOCKET_FROM_WEBSOCKET)
+    {
+        int complepack = wsPackCheck(src, dwBytes);
+        int alllenth = dwBytes;
+        int typepack = 0;
+        map<IOCP_IO_PTR, pBREAKPCK>::iterator webite;
+
+        if(complepack == WS_ALL_PACK)
+        {
+            goto COMPLETEPACK;
+        }
+
+        webite =  m_pack.find(lp_io);
+
+        if(webite != m_pack.end())
+        {
+            pBREAKPCK pack = webite->second;
+            AppendByte(src, alllenth, pack, lp_io);
+            PostLog("web 断包包尾:lp_io:%p 长度:%d", lp_io, dwBytes);
+
+            if(alllenth > BUFFER_SIZE)
+            {
+                PostLog("包长度过大:%d", alllenth);
+
+                if(pack)
+                {
+                    delete pack;
+                    pack = NULL;
+                }
+
+                m_pack.erase(webite);
+                return 1;
+            }
+        }
+
+        typepack = wsPackCheck(src, alllenth);
+
+        if(typepack == WS_ALL_PACK)
+        {
+            map<IOCP_IO_PTR, pBREAKPCK>::iterator webite =  m_pack.find(lp_io);
+
+            if(webite != m_pack.end())
+            {
+                m_pack.erase(webite);
+            }
+
+            goto  COMPLETEPACK;
+        }
+        else if(typepack == WS_BREAK_PACK)
+        {
+            map<IOCP_IO_PTR, pBREAKPCK>::iterator itepack =  m_pack.find(lp_io);
+
+            if(itepack == m_pack.end())
+            {
+                //websocket断包处理
+                pBREAKPCK webpack = new BREAK_PACK;
+                BYTE *b1 = new BYTE[datalen];
+                memset(b1, 0, datalen);
+                memcpy(b1, src, datalen);
+                webpack->b = b1;
+                webpack->len = datalen;
+                m_pack.insert(make_pair(lp_io, webpack));
+                PostLog("web 断包包头:lp_io:%p 长度:%d", lp_io, datalen);
+            }
+        }
+
+COMPLETEPACK:
+        string  strret = "";
+        BOOL bBreadPack = FALSE;
+        int lenread = wsDecodeFrame(lp_io->buf, strret, alllenth, bBreadPack);
+        // PostLog("lenread:%d bBreadPack:%d", lenread, bBreadPack);
+
+        if(lenread == WS_OPENING_FRAME && bBreadPack == FALSE)
+        {
+            map<IOCP_IO_PTR, pBREAKPCK>::iterator ite1 =  m_pack.find(lp_io);
+
+            if(ite1 != m_pack.end())
+            {
+                m_pack.erase(ite1);
+            }
+
+            DealWebsockMsg(lp_io, lp_key, strret, alllenth);
+        }
+        else if(lenread == WS_CLOSING_FRAME)
+        {
+            PostLog("web端退出 通信指针:%p", lp_io);
+            lp_io->operation = IOCP_END;
+        }
+
+        return 1;
     }
 
     return 1;

@@ -78,7 +78,7 @@ void CMainFrame::Init()
 
 	USHORT crc16 = usMBCRC16(hexData,sizeof(hexData));
 
-
+	        m_cmbworkmode =  static_cast<CComboUI*>(m_pm.FindControl(_T("workmode")));
 
     map<int, string>m_vvv;
     m_vvv.insert(pair<int, string>(50, "aaa"));
@@ -99,7 +99,7 @@ void CMainFrame::Init()
     m_pUserName = static_cast<CLabelUI*>(m_pm.FindControl(_T("loguser")));
     m_pDate->SetText(gstring::getday().c_str());
     m_pUserName->SetText("....");
-    m_pData->SetText("683200320068040117660002ac7100002004c516");
+    m_pData->SetText("01 03 17 d1 00 05");
     m_plistuser->RemoveAll();
     string pdir = GetDataDir("config.ini");
     char source[216] = {0};
@@ -531,7 +531,7 @@ LRESULT CMainFrame::OnUser(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandl
         m_pRishLog->EndDown();
     }
 
-    if(m_pRishLog->GetLineCount() > 500)
+    if(m_pRishLog->GetLineCount() > 400)
     {
         m_pRishLog->SetText("");
         m_pRishLog->Clear();

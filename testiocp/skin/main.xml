@@ -35,7 +35,14 @@
 <!--      <Button name="weblist" text="sql查询" width="100" height="30" bkcolor="#FF24759F" hottextcolor="#FF24865F"  padding="10,10" bkcolor2="#3BC7FA"/>
  -->
                <Label text="数据:" width="30" height="30"  padding="10,10" />
-               <Edit name="data"  borderround="4,4,4,4" nativebkcolor="#ff5AD2F6" bkcolor="#ff5AD2F6"  width="400" height="30"  padding="1,10" />  
+               <Edit name="data"  borderround="4,4,4,4" nativebkcolor="#ff5AD2F6" bkcolor="#ff5AD2F6"  width="200" height="30"  padding="1,10" />  
+
+
+
+
+
+
+
 
 
                <Button name="setdata" text="设置" width="100" height="30" bkcolor="#FF24759F" hottextcolor="#FF24865F"  padding="10,10" bkcolor2="#3BC7FA"/>
@@ -47,12 +54,33 @@
 
  <!--      <Button name="closesocket" text="关闭socket" width="100" height="30" bkcolor="#FF24759F" hottextcolor="#FF24865F"  padding="10,10" bkcolor2="#3BC7FA"/> -->
 
-     
+                      <Button name="sendcrc" text="发送crc16" width="100" height="30" bkcolor="#FF24759F" hottextcolor="#FF24865F"  padding="10,10" bkcolor2="#3BC7FA"/>
 
           </HorizontalLayout>
 
   <HorizontalLayout>
- <!-- <Button name="deletebtn" text="删除" width="100" height="30" bkcolor="#FF24759F" hottextcolor="#FF24865F"  padding="10,10" bkcolor2="#3BC7FA"/> -->
+
+
+      <Label text="发关列表:" width="60" height="30" padding="10,10"   />
+         
+                                                        <Combo name="workmode" padding="10,10"  width="200"  height="25" borderround="4,4,4,4" tooltip="请点击这里选择您准备使用的账号" normalimage="file='Combo_nor.bmp' corner='2,2,24,2'" hotimage="file='Combo_over.bmp' corner='2,2,24,2'" pushedimage="file='Combo_over.bmp' corner='2,2,24,2'" textpadding="10,1,1,1" >
+                                                          <ListLabelElement text="@DTU: 0000:DTUALL?" selected="true" />
+                                                          <ListLabelElement text="@DTU:0000:CGMR?" />
+                                          <ListLabelElement text="@DTU:0000:DSCADDR:0,TCP,119.28.130.53,16181" />
+ <ListLabelElement text="@DTU:0000:DTUID?" />
+ <ListLabelElement text="@DTU:0000:DTUID:1,1,17020101" />
+ <ListLabelElement text="@DTU:0000:KEEPALIVE:30,5,3000,17,0, www.cdebyte.com" />
+ <ListLabelElement text="@DTU:0000:AT&F" />
+
+                                          </Combo>
+
+
+
+
+
+
+
+ <Button name="sendconfig" text="发送配置" width="100" height="30" bkcolor="#FF24759F" hottextcolor="#FF24865F"  padding="10,10" bkcolor2="#3BC7FA"/>
      </HorizontalLayout>
             <List  height="200" menu="true" borderround="5,5,5,5" padding="1,1"  headerbkimage="file='list_header_bg.png'" hscrollbar="true" inset="0,0" itemalign="center" itemaltbk="FALSE" itemlinecolor="#FF115500" multiexpanding="true"   itemshowhtml="true"  name="socketlist" vscrollbar="true"  >
                                                           <ListHeader height="24" bordersize="1" bordercolor="00222827" >
@@ -84,7 +112,7 @@
 
               <VerticalLayout name="ooo" height="1" />
                 <HorizontalLayout  height="30" bkcolor="#FF595959" bkcolor2="#FF393939"  >
-                    <Label text="欢迎使用智能路灯系统" width="200" padding="10" textcolor="FFFFFFFF"></Label>
+                    <Label text="欢迎使用农业管理系统" width="200" padding="10" textcolor="FFFFFFFF"></Label>
                     <VerticalLayout width="2" bkcolor="#FF292929">          
                     </VerticalLayout>
 
