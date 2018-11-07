@@ -562,17 +562,43 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key, DWORD
                 }
                 else
                 {
-     
+                    if(dwByte > 4)
+                    {
+                        int nlen = dwByte > 20 ? 20 : dwByte;
+                        char id[30] = {0};
+                        memcpy(id, lp_io->buf, nlen);
+                        SHORT s = usMBCRC16((UCHAR*)id, dwByte - 4);
+                        BYTE blow = s & 0xff;
+                        BYTE bhigh = s >> 8 & 0xff;
+                        char crc32[20] = {0};
+                        sprintf(crc32, "%02x%02x", blow, bhigh);
 
-					memset(lp_io->buf, 0, BUFFER_SIZE);
-					unsigned char hexData[6] =
-					{
-						0x61, 0x62, 0x63, 0x64, 0x65, 0x66
-					};
-					memcpy(lp_io->buf, hexData, sizeof(hexData));
-					lp_io->wsaBuf.buf = lp_io->buf;
-					lp_io->wsaBuf.len = sizeof(hexData);
-					lp_io->operation = IOCP_WRITE;
+                        if(_stricmp(&id[dwByte - 4], crc32) == 0)
+                        {
+                            lp_io->fromtype = SOCKET_FROM_GAYWAY;
+                            char addrarea[20] = {0};
+                            memcpy(addrarea, lp_io->buf, dwByte - 4);
+                            setOnline(addrarea, 1);
+                            strcpy(lp_io->gayway, addrarea);
+							pListElement->SetText(8,addrarea);
+                            map<string, IOCP_IO_PTR>::iterator it = m_mcontralcenter.find(addrarea);
+
+                            if(it == m_mcontralcenter.end())
+                            {
+                                m_mcontralcenter.insert(pair<string, IOCP_IO_PTR>(addrarea, lp_io));
+                            }
+                            else
+                            {
+                                it->second = lp_io;
+                            }
+
+                            memset(lp_io->buf, 0, BUFFER_SIZE);
+                            memcpy(lp_io->buf, addrarea, sizeof(addrarea));
+                            lp_io->wsaBuf.buf = lp_io->buf;
+                            lp_io->wsaBuf.len = strlen(addrarea) + 1;
+                            lp_io->operation = IOCP_WRITE;
+                        }
+                    }
                 }
             }
             break;
@@ -2204,49 +2230,24 @@ BOOL CIOCP::dealRead(IOCP_IO_PTR & lp_io, IOCP_KEY_PTR & lp_key, DWORD dwBytes)
         pElement->SetText(7, lenstr);
     }
 
-	if(dwBytes > 5)
-	{
-		if(src[0] == 0x40 && src[1] == 0x44 && src[2] == 0x54 && src[3] == 0x55)
-		{
-			char info[512] = {0};
-			int nn = dwBytes > 512 ? 512 : dwBytes;
-			memcpy(info, src, nn);
-			PostLog(info);
-		}
-	}
-
-    if(dwBytes == 15)
+    if(dwBytes > 5)
     {
-        char vv[16] = {0};
-        memcpy(vv, lp_io->buf, dwBytes);
-
-        if(_stricmp(vv, "www.cdebyte.com") == 0)
+        if(src[0] == 0x40 && src[1] == 0x44 && src[2] == 0x54 && src[3] == 0x55)
         {
-            string address = "17020101";
-            lp_io->fromtype = SOCKET_FROM_GAYWAY;
-            map<string, IOCP_IO_PTR>::iterator it = m_mcontralcenter.find(address);
-
-            if(it == m_mcontralcenter.end())
-            {
-                m_mcontralcenter.insert(pair<string, IOCP_IO_PTR>(address, lp_io));
-            }
-            else
-            {
-                it->second = lp_io;
-            }
-
-            memset(lp_io->buf, 0, BUFFER_SIZE);
-            unsigned char hexData[6] =
-            {
-                0x61, 0x62, 0x63, 0x64, 0x65, 0x66
-            };
-            memcpy(lp_io->buf, hexData, sizeof(hexData));
-            lp_io->wsaBuf.buf = lp_io->buf;
-            lp_io->wsaBuf.len = sizeof(hexData);
-            lp_io->operation = IOCP_WRITE;
-            DataAction(lp_io, lp_key);
+            char info[512] = {0};
+            int nn = dwBytes > 512 ? 512 : dwBytes;
+            memcpy(info, src, nn);
+            PostLog(info);
         }
     }
+
+
+	if (lp_io->fromtype==SOCKET_FROM_GAYWAY)
+	{
+
+	}
+
+
 
     if(lp_io->fromtype == SOCKET_FROM_WEBSOCKET)
     {
