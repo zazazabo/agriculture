@@ -266,6 +266,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
   hInst = hInstance;
   gstring::setIcon(NULL, IDI_ICON1);
   glog::setOpenLog(TRUE);
+  
   CoInitialize(NULL);
   show();
   return TRUE;
@@ -290,7 +291,6 @@ void show()
 
   //CMainFrame* pAddCard = new CMainFrame("main.xml");
   if(pAddCard == NULL) return;
-
   LPVOID pRes = NULL;
   int uSize = 0;
   HWND hwnd = pAddCard->Create(NULL, _T(""), UI_WNDSTYLE_DIALOG, WS_EX_WINDOWEDGE);
@@ -299,6 +299,8 @@ void show()
   ::ShowWindow(hwnd, SW_NORMAL);
   ::UpdateWindow(hwnd);
   pAddCard->ShowModal();
+
+  
   //MSG msg;
   //hWindow = CreateDialog(hInst, MAKEINTRESOURCE(IDD_DIALOG1), NULL, DLGPROC(DialogProc));
   //ShowWindow(hWindow, SW_NORMAL);

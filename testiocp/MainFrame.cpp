@@ -75,7 +75,7 @@ void CMainFrame::Init()
 		0x01, 0x03, 0x17, 0xD0, 0x00, 0x02 
 	};
 
-
+	
 	USHORT crc16 = usMBCRC16(hexData,sizeof(hexData));
 
 	        m_cmbworkmode =  static_cast<CComboUI*>(m_pm.FindControl(_T("workmode")));
@@ -83,7 +83,6 @@ void CMainFrame::Init()
     map<int, string>m_vvv;
     m_vvv.insert(pair<int, string>(50, "aaa"));
 	string aa= m_vvv[0];
-
     v_fault.push_back("µ∆æﬂπ ’œ");
     v_fault.push_back("Œ¬∂»π ’œ");
     v_fault.push_back("≥¨∏∫∫…π ’œ");
@@ -99,6 +98,7 @@ void CMainFrame::Init()
     m_pUserName = static_cast<CLabelUI*>(m_pm.FindControl(_T("loguser")));
     m_pDate->SetText(gstring::getday().c_str());
     m_pUserName->SetText("....");
+
     m_pData->SetText("01 03 17 d1 00 05");
     m_plistuser->RemoveAll();
     string pdir = GetDataDir("config.ini");
@@ -123,7 +123,7 @@ void CMainFrame::Init()
         _variant_t l_code = rs->GetCollect("l_code");
         rs->MoveNext();
     }
-
+	    setOnline("1=1", 0);
     ////dealSql("17020101", "2018-09-28", "bbb", "activepower");
     this->m_hParanWnd = this->m_hWnd;
     this->CenterWindow();
@@ -710,6 +710,20 @@ void CMainFrame::dealSqlPower(string addrarea, string myday, string power00, str
 
 void CMainFrame::setOnline(string comaddr, int status)
 {
+
+
+
+
+
+	//char uu[40]={0};
+	//char*  p1=uu;
+	//strcpy(uu,comaddr.c_str());
+	//while (*p1=='\0'&&*p1!=0x30)
+	//{
+	//		p1+=1;
+	//		
+	//}
+
     map<string, _variant_t>m_var;
     _variant_t vonline(status);
     m_var.insert(pair<string, _variant_t>("online", vonline));

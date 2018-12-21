@@ -66,11 +66,11 @@
                                                         <Combo name="workmode" padding="10,10"  width="500"  height="25" borderround="4,4,4,4" tooltip="请点击这里选择您准备使用的账号" normalimage="file='Combo_nor.bmp' corner='2,2,24,2'" hotimage="file='Combo_over.bmp' corner='2,2,24,2'" pushedimage="file='Combo_over.bmp' corner='2,2,24,2'" textpadding="10,1,1,1" >
                                                           <ListLabelElement text="@DTU: 0000:DTUALL?" selected="true" />
                                                           <ListLabelElement text="@DTU:0000:CGMR?" />
-                                          <ListLabelElement text="@DTU:0000:DSCADDR:0,TCP,116.62.42.192,8124" />
+                                          <ListLabelElement text="@DTU:0000:DSCADDR:0,TCP, 47.99.78.186,24228" />
  <ListLabelElement text="@DTU:0000:DTUID?" />
- <ListLabelElement text="@DTU:0000:DTUID:1,0,18Y603779d7" />
+ <ListLabelElement text="@DTU:0000:DTUID:2,1,303030303030303030303031385936303332755A" />
   <ListLabelElement text="@DTU:0000:DTUID:0,0,00000000001" />
- <ListLabelElement text="@DTU:0000:KEEPALIVE:30,0,3000,5,1,684a004a0068c4021701010402f5000004000149412003059116" />
+ <ListLabelElement text="@DTU:0000:KEEPALIVE:30,0,3000,125,1,684a004a0068c4021701010402f5000004000149412003059116" />
  <ListLabelElement text="@DTU:0000:AT&F" />
   <ListLabelElement text="@DTU:0000:RELINKTIME:10" />
   <ListLabelElement text="@DTU:0000:UARTCFG:9600,1,0,0" />
@@ -97,12 +97,12 @@
                                                           <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="通信指针" width="100"/>
     <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="Key" width="100"/>
                                                          
-                                                          <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="设置发送的数据" width="280"/>
+                                                          <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="设置发送的数据" width="180"/>
                                                           <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="收到十六进制数据" width="200"/>
                                                           <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="收到的ascii码" width="200"/>
                                                           <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="长度" width="50"/>
                                                         
-                                                              <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="客户端类型" width="80"/>
+                                                              <ListHeaderItem font="1" hotimage="file='list_header_hot.png'" pushedimage="file='list_header_pushed.png'" sepimage="file='list_header_sep.png'" sepwidth="1" text="客户端类型" width="180"/>
 
                                          </ListHeader>
                                         </List>

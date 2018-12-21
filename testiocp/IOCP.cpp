@@ -103,18 +103,26 @@ void CIOCP::Notify(TNotifyUI& msg)
             //glog::trace("come on CheckForInvalidConnection");
             while(lp_start != NULL)
             {
+                op_len = sizeof(op);
+                nRet = getsockopt(lp_start->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
+                int len = 0;
+
+                if(op != 0xffffffff)
+                {
+                    len = op - lp_start->timelen;
+                }
+
                 if(lp_start->fromtype == SOCKET_FROM_GAYWAY)
                 {
-                    op_len = sizeof(op);
-                    nRet = getsockopt(lp_start->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
-                    int len = 0;
-
-                    if(op != 0xffffffff)
-                    {
-                        len = op - lp_start->timelen;
-                    }
-
-                    PostLog("网关:%s 在线间隔收到的消息:%d秒 通信指针:%p", lp_start->gayway, len, lp_start);
+                    PostLog("网关:%s 在线间隔收到的消息:%d秒 通信指针:%p socket:%d", lp_start->gayway, len, lp_start, lp_start->socket);
+                }
+                else if(lp_start->fromtype == SOCKET_FROM_WEBSOCKET)
+                {
+                    PostLog("来自网页 在线间隔收到的消息:%d秒 通信指针:%p socket:%d",  len, lp_start, lp_start->socket);
+                }
+                else
+                {
+                    PostLog("未知连接 在线间隔收到的消息:%d秒 通信指针:%p socket:%d", len, lp_start, lp_start->socket);
                 }
 
                 lp_start = m_io_group.GetNext(pos);
@@ -175,7 +183,7 @@ void CIOCP::Notify(TNotifyUI& msg)
             int n = m_plistuser->GetCurSel();
             string lpiostr =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 2);
             string lpkeystr =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 3);
-            string data =   getItemText(m_plistuser, m_plistuser->GetCurSel(), 4);
+            string data =   m_pData->GetText();;
             IOCP_IO_PTR io = (IOCP_IO_PTR)strtol(lpiostr.c_str(), NULL, 16);
             IOCP_KEY_PTR ik = (IOCP_KEY_PTR)strtol(lpiostr.c_str(), NULL, 16);
 
@@ -422,7 +430,7 @@ BOOL CIOCP::PostAcceptEx()
         lp_io->operation        = IOCP_ACCEPT;
         lp_io->state            = SOCKET_STATE_NOT_CONNECT;
         lp_io->fromtype = SOCKET_FROM_UNKNOW;
-        lp_io->ibreakpack = 0;
+        lp_io->ibeathit = 0;
         //lp_io->loginstatus = SOCKET_STATUS_UNKNOW;
         lp_io->lp_key = NULL;
         lp_io->timelen = 0;
@@ -562,25 +570,25 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key, DWORD
                 }
                 else
                 {
-                    if(dwByte > 4)
+                    if(dwByte == 20)
                     {
                         int nlen = dwByte > 20 ? 20 : dwByte;
                         char id[30] = {0};
                         memcpy(id, lp_io->buf, nlen);
-                        SHORT s = usMBCRC16((UCHAR*)id, dwByte - 4);
+                        SHORT s = usMBCRC16((UCHAR*)id, dwByte - 2);
                         BYTE blow = s & 0xff;
                         BYTE bhigh = s >> 8 & 0xff;
                         char crc32[20] = {0};
                         sprintf(crc32, "%02x%02x", blow, bhigh);
 
-                        if(_stricmp(&id[dwByte - 4], crc32) == 0)
+                        if(id[dwByte - 2] == blow && id[dwByte - 1] == bhigh)
                         {
                             lp_io->fromtype = SOCKET_FROM_GAYWAY;
                             char addrarea[20] = {0};
-                            memcpy(addrarea, lp_io->buf, dwByte - 4);
+                            memcpy(addrarea, lp_io->buf, dwByte - 2);
                             setOnline(addrarea, 1);
                             strcpy(lp_io->gayway, addrarea);
-							pListElement->SetText(8,addrarea);
+                            pListElement->SetText(8, addrarea);
                             map<string, IOCP_IO_PTR>::iterator it = m_mcontralcenter.find(addrarea);
 
                             if(it == m_mcontralcenter.end())
@@ -592,10 +600,14 @@ BOOL CIOCP::HandleData(IOCP_IO_PTR lp_io, int nFlags, IOCP_KEY_PTR lp_key, DWORD
                                 it->second = lp_io;
                             }
 
+                            unsigned char hexData[8] =
+                            {
+                                0x01, 0x03, 0x1E, 0xD8, 0x00, 0x02, 0x42, 0x18
+                            };
                             memset(lp_io->buf, 0, BUFFER_SIZE);
-                            memcpy(lp_io->buf, addrarea, sizeof(addrarea));
+                            memcpy(lp_io->buf, hexData, sizeof(hexData));
                             lp_io->wsaBuf.buf = lp_io->buf;
-                            lp_io->wsaBuf.len = strlen(addrarea) + 1;
+                            lp_io->wsaBuf.len = sizeof(hexData);
                             lp_io->operation = IOCP_WRITE;
                         }
                     }
@@ -816,7 +828,27 @@ void CIOCP::DealWebsockMsg(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key, string json
 
             if(msgType.isString() && tosend.isString() && tosend != "")
             {
-                if(msgType == "AA" || msgType == "A4" || msgType == "A5" || msgType == "AC" || msgType == "00" || msgType == "FE" || msgType == "FF")
+                if(msgType == "sensor")
+                {
+                    string addrarea = root["comaddr"].asString();
+                    map<string, IOCP_IO_PTR>::iterator ite = m_mcontralcenter.find(addrarea);
+
+                    if(ite != m_mcontralcenter.end())
+                    {
+                        PostThreadMessageA(ThreadId, WM_USER + 4, (WPARAM)ite->second, (LPARAM)0);
+                    }
+                }
+                else if(msgType == "loop")
+                {
+                    string addrarea = root["comaddr"].asString();
+                    map<string, IOCP_IO_PTR>::iterator ite = m_mcontralcenter.find(addrarea);
+
+                    if(ite != m_mcontralcenter.end())
+                    {
+                        PostThreadMessageA(ThreadId, WM_USER + 2, (WPARAM)ite->second, (LPARAM)0);
+                    }
+                }
+                else   if(msgType == "10" || msgType == "03")
                 {
                     string data = tosend.asString();
                     data = gstring::replace(data, " ", "");
@@ -830,6 +862,34 @@ void CIOCP::DealWebsockMsg(IOCP_IO_PTR& lp_io, IOCP_KEY_PTR& lp_key, string json
 
                         if(ite != m_mcontralcenter.end())
                         {
+                            BYTE seq = 0;
+                            map<string, list<MSGPACK>>::iterator itmsg = m_MsgPack.find(addrarea);
+
+                            if(itmsg != m_MsgPack.end())
+                            {
+                                list<MSGPACK>v_msg = itmsg->second;
+                                seq = v_msg.begin() == v_msg.end() ? 0 : v_msg.back().seq + 1;
+                            }
+                            else
+                            {
+                                seq = 0;
+                            }
+
+                            seq = seq > 0xf ? 0 : seq;
+                            _MSGPACK msg = {0};
+                            msg.lp_io = lp_io;
+                            msg.seq = seq;
+                            msg.timestamp = time(NULL);
+                            msg.root = root;
+
+                            if(itmsg == m_MsgPack.end())
+                            {
+                                list<_MSGPACK>v_msgpack;
+                                m_MsgPack.insert(pair<string, list<MSGPACK>>(addrarea, v_msgpack));
+                            }
+
+                            itmsg = m_MsgPack.find(addrarea);
+                            itmsg->second.push_back(msg);
                             SHORT crc16 = usMBCRC16(bitSend, len);
                             bitSend[len] = crc16 & 0xff;
                             bitSend[len + 1] = crc16 >> 8 & 0xff;
@@ -903,251 +963,202 @@ DWORD CIOCP::TimeThread(LPVOID lp_param)
     {
         if(msg.message == WM_USER + 1)
         {
-            //__try
-            //  {
             IOCP_IO_PTR lo = (IOCP_IO_PTR)msg.wParam;
-            // lp_this->PostLog("%X %X", lo, msg.lParam);
 
             if(lo)
             {
-                time_t tmtamp;
-                struct tm *tm1 = NULL;
-                time(&tmtamp) ;
-                tm1 = localtime(&tmtamp) ;
-                tm1->tm_yday;
-                BYTE ii = msg.lParam;
-                int day = (int)(ii >> 4 & 0xf) * 10 + (int)(ii & 0xf);
+                string gayway = lo->gayway;
+                string sql = "select * from t_sensor where deplayment=1 and l_comaddr=\'";
+                sql.append(gayway);
+                sql.append("\' ORDER BY infonum DESC");
+                _RecordsetPtr rs = lp_this->dbopen->ExecuteWithResSQL(sql.c_str());
+                vector<int>v_num;
+                v_num.clear();
 
-                if(tm1->tm_mday == day)
+                while(rs && !rs->adoEOF)
                 {
-                    tm1->tm_mday--;
-                    mktime(tm1);
-                    char myday[30] = {0};
-                    strftime(myday, sizeof(myday), "%Y-%m-%d", tm1);
-                    char gayway[20] = {0};
-                    strcpy(gayway, lo->gayway);
+                    int infonum =  rs->GetCollect("infonum");
+                    v_num.push_back(infonum);
+                    rs->MoveNext();
+                    break;
+                }
 
-                    if(_stricmp(lo->day, myday) != 0)
+                if(v_num.size() > 0)
+                {
+                    int nsize = v_num[0];
+                    int n2 = nsize / 10;
+
+                    if((float)nsize / 10 > n2)
                     {
-                        vector<BYTE>v_b;
-                        int n = 0;
+                        n2 += 1;
+                    }
 
-                        if(lp_this->m_mcontralcenter.find(gayway) != lp_this->m_mcontralcenter.end())
+                    lp_this->PostLog("最大信息点:%d", n2);
+
+                    if(n2 > 0 && n2 < 100)
+                    {
+                        for(int i = 0; i < n2; i++)
                         {
-                            //昨天三相电压
-                            lp_this->PostLog("网关[%s] 请求昨天三相电压数据", gayway);
-                            //unsigned char vol[24] = {0x68, 0x42, 0x00, 0x42, 0x00, 0x68, 0x04, comaddr[1], comaddr[0], comaddr[3], comaddr[2], 0x02, 0xAC, 0x7A, 0x00, 0x00, 0x04, 0x04, 0x00, 0x00, 0x01, 0x05, 0x55, 0x16};
-                            BYTE vol[50] = {0};
-                            n = lp_this->buidByte(gayway, 0x4, 0xAC, 0x71, 0, 0x404, v_b, vol);
+                            BYTE data[8] = {0};
+                            data[0] = 0x1;
+                            data[1] = 0x3;
+                            SHORT infonum = (2000 + i  * 5 * 20) | 0x1000;               //一次只能10个信息点  10个信息点200字节
+                            data[2] = infonum >> 8 & 0xff;
+                            data[3] = infonum & 0xff;
+                            data[4] = 100 >> 8 & 0xff;
+                            data[5] = 100 & 0xff;
+                            SHORT crc16 = lp_this->usMBCRC16(data, 6);
+                            data[6] = crc16 & 0x00ff;
+                            data[7] = crc16 >> 8 & 0x00ff;
                             lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, vol, n);
-                            lo->wsaBuf.len = n; // sizeof(vol);
+                            memcpy(lo->buf, data, sizeof(data));
+                            lo->wsaBuf.len = sizeof(data);
                             lo->wsaBuf.buf = lo->buf;
                             lo->operation = IOCP_WRITE;
                             lp_this->DataAction(lo, lo->lp_key);
-                            //昨天三相电流
-                            Sleep(10000);
-                        }
-
-                        if(lp_this->m_mcontralcenter.find(gayway) != lp_this->m_mcontralcenter.end())
-                        {
-                            lp_this->PostLog("网关[%s]请求昨天三相电流数据", gayway);
-                            BYTE electric[50] = {0}; //{0x68, 0x32, 0x00, 0x32, 0x00, 0x68, 0x04, comaddr[1], comaddr[0], comaddr[3], comaddr[2], 0x02, 0xAC, 0x75, 0x00, 0x00, 0x20, 0x04, 0x66, 0x16 };
-                            n = lp_this->buidByte(gayway, 0x4, 0xAC, 0x71, 0, 0x420, v_b, electric);
-                            string data1 = gstring::char2hex((const char*)electric, n);
-                            //glog::GetInstance()->AddLine("电流发送包:%s", data1.c_str());
-                            lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, electric, n);
-                            lo->wsaBuf.len = n;
-                            lo->wsaBuf.buf = lo->buf;
-                            lo->operation = IOCP_WRITE;
-                            lp_this->DataAction(lo, lo->lp_key);
-                            //昨天三相有功功率
-                            Sleep(10000);
-                        }
-
-                        if(lp_this->m_mcontralcenter.find(gayway) != lp_this->m_mcontralcenter.end())
-                        {
-                            lp_this->PostLog("网关[%s]请求昨天三相有功功率数据", gayway);
-                            unsigned char activepower[50] = {0}; // {0x68, 0x42, 0x00, 0x42, 0x00, 0x68, 0x04, comaddr[1], comaddr[0], comaddr[3], comaddr[2], 0x02, 0xAC, 0x76, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x20, 0x04, 0x6B, 0x16 };
-                            n = lp_this->buidByte(gayway, 0x4, 0xAC, 0x71, 0, 0x301, v_b, activepower);
-                            lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, activepower, n);
-                            lo->wsaBuf.len = n; //sizeof(activepower);
-                            lo->wsaBuf.buf = lo->buf;
-                            lo->operation = IOCP_WRITE;
-                            lp_this->DataAction(lo, lo->lp_key);
-                            ////昨天总功率因数
-                            Sleep(10000);
-                        }
-
-                        if(lp_this->m_mcontralcenter.find(gayway) != lp_this->m_mcontralcenter.end())
-                        {
-                            lp_this->PostLog("网关[%s]请求昨天功率因数", gayway);
-                            unsigned char powerfactor[50] = {0}; //{0x68, 0x42, 0x00, 0x42, 0x00, 0x68, 0x04, comaddr[1], comaddr[0], comaddr[3], comaddr[2], 0x02, 0xAC, 0x78, 0x00, 0x00, 0x40, 0x03, 0x00, 0x00, 0x20, 0x04, 0xAC, 0x16 };
-                            n = lp_this->buidByte(gayway, 0x4, 0xAC, 0x71, 0, 0x340, v_b, powerfactor);
-                            lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, powerfactor, n);
-                            lo->wsaBuf.len = n;
-                            lo->wsaBuf.buf = lo->buf;
-                            lo->operation = IOCP_WRITE;
-                            lp_this->DataAction(lo, lo->lp_key);
-                            //正向功能量
-                            Sleep(10000);
-                        }
-
-                        if(lp_this->m_mcontralcenter.find(gayway) != lp_this->m_mcontralcenter.end())
-                        {
-                            lp_this->PostLog("网关[%s]请求昨天正向功能量", gayway);
-                            unsigned char power[50] = {0};//{0x68, 0x32, 0x00, 0x32, 0x00, 0x68, 0x04,  comaddr[1], comaddr[0], comaddr[3], comaddr[2], 0x02, 0xAC, 0x7B, 0x00, 0x00, 0x01, 0x05, 0x4E, 0x16 };
-                            n = lp_this->buidByte(gayway, 0x4, 0xAC, 0x71, 0, 0x501, v_b, power);
-                            lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, power, n);
-                            lo->wsaBuf.len = n;
-                            lo->wsaBuf.buf = lo->buf;
-                            lo->operation = IOCP_WRITE;
-                            lp_this->DataAction(lo, lo->lp_key);
-                            strcpy(lo->day, myday);
+                            Sleep(1000);
                         }
                     }
                 }
             }
-
-            //  }
-            //__except(GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
-            //  {
-            //  }
         }
         else if(msg.message == WM_USER + 2)
         {
-            if(msg.wParam == 1000 && msg.lParam == 1000)
+            IOCP_IO_PTR lo = (IOCP_IO_PTR)msg.wParam;
+
+            if(lo)
             {
-                lp_this->PostLog("重连数据库");
-                string pdir = lp_this->GetDataDir("config.ini");
-                lp_this->dbopen->ReConnect(pdir);
+                string gayway = lo->gayway;
+                string sql = "select * from t_loop where l_deplayment=1 and l_comaddr=\'";
+                sql.append(gayway);
+                sql.append("\' ORDER BY l_info DESC");
+                _RecordsetPtr rs = lp_this->dbopen->ExecuteWithResSQL(sql.c_str());
+                vector<int>v_num;
+                v_num.clear();
+
+                while(rs && !rs->adoEOF)
+                {
+                    int infonum =  rs->GetCollect("l_info");
+                    v_num.push_back(infonum);
+                    rs->MoveNext();
+                    break;
+                }
+
+                if(v_num.size() > 0)
+                {
+                    int nsize = v_num[0];
+                    int n2 = nsize / 4;
+
+                    if((float)nsize / 4 > n2)
+                    {
+                        n2 += 1;
+                    }
+
+                    lp_this->PostLog("最大控制点:%d", n2);
+
+                    if(n2 > 0 && n2 < 20)
+                    {
+                        for(int i = 0; i < n2; i++)
+                        {
+                            BYTE data[8] = {0};
+                            data[0] = 0x1;
+                            data[1] = 0x3;
+                            SHORT infonum = (3000 + i  * 4 * 40) | 0x1000;               //一次只能10个信息点  10个信息点200字节
+                            data[2] = infonum >> 8 & 0xff;
+                            data[3] = infonum & 0xff;
+                            data[4] = 80 >> 8 & 0xff;
+                            data[5] = 80 & 0xff;
+                            SHORT crc16 = lp_this->usMBCRC16(data, 6);
+                            data[6] = crc16 & 0x00ff;
+                            data[7] = crc16 >> 8 & 0x00ff;
+                            lp_this->InitIoContext(lo);
+                            memcpy(lo->buf, data, sizeof(data));
+                            lo->wsaBuf.len = sizeof(data);
+                            lo->wsaBuf.buf = lo->buf;
+                            lo->operation = IOCP_WRITE;
+                            lp_this->DataAction(lo, lo->lp_key);
+                            Sleep(1000);
+                        }
+                    }
+                }
             }
         }
         else if(msg.message == WM_USER + 3)
         {
-            string pid = (char*)msg.wParam;
-            lp_this->PostLog("projectId:%s", pid.c_str());
-            string sql = "SELECT l_comaddr,l_code FROM   t_lamp tl\
-					   WHERE  l_deplayment = 1 AND l_comaddr IN (SELECT comaddr AS l_comaddr FROM    t_baseinfo WHERE  online=1 AND  pid     = \'";
-            sql.append(pid);
-            sql.append("\') GROUP BY tl.l_comaddr,tl.l_code ");
-            glog::trace("%s", sql.c_str());
-            _RecordsetPtr rs = lp_this->dbopen->ExecuteWithResSQL(sql.c_str());
-            map<string, list<SHORT>>m_lamp;
+            IOCP_IO_PTR lo = (IOCP_IO_PTR)msg.wParam;
 
-            while(rs && !rs->adoEOF)
+            if(lo)
             {
-                try
-                {
-                    _variant_t l_comaddr = rs->GetCollect("l_comaddr");
-                    _variant_t l_code = rs->GetCollect("l_code");
-                    string comaddr = _com_util::ConvertBSTRToString(l_comaddr.bstrVal);
-                    map<string, list<SHORT>>::iterator it = m_lamp.find(comaddr);
-
-                    if(it != m_lamp.end())
-                    {
-                        it->second.push_back(l_code);
-                    }
-                    else
-                    {
-                        list<SHORT>v_l_code;
-                        v_l_code.push_back(l_code);
-                        m_lamp.insert(pair<string, list<SHORT>>(comaddr, v_l_code));
-                    }
-
-                    rs->MoveNext();
-                }
-                catch(_com_error e)
-                {
-                    break;
-                }
-            }
-
-            if(m_lamp.size() > 0)
-            {
-                string sql1 = "UPDATE t_lamp SET presence = 0 WHERE  l_deplayment = 1 AND l_comaddr IN (SELECT comaddr AS l_comaddr FROM   t_baseinfo WHERE  pid = \'";
-                sql1.append(pid);
-                sql1.append("\'");
-                sql1.append(")");
-                _RecordsetPtr rs = lp_this->dbopen->ExecuteWithResSQL(sql1.c_str());
-            }
-
-            for(auto it = m_lamp.begin(); it != m_lamp.end(); it++)
-            {
-                list<SHORT>v_s = it->second;
-                string l_comaddr = it->first;
-                vector<BYTE>v_param;
-                int z = 0;
-
-                for(auto it = v_s.begin(); it != v_s.end();)
-                {
-                    SHORT s = *it;
-
-                    if(z == 0)
-                    {
-                        v_param.push_back(v_s.size());
-                    }
-
-                    v_s.erase(it++);
-                    z++;
-                    BYTE a =  s >> 8 & 0x00ff;
-                    BYTE b =  s & 0x00ff;
-                    v_param.push_back(b);
-                    v_param.push_back(a);
-
-                    if(it == v_s.end())
-                    {
-                        BYTE vol[1024] = {0};
-                        int  n = lp_this->buidByte(l_comaddr, 0x4, 0xAC, 0x71, 0, 0x0040, v_param, vol);
-                        string  hh = gstring::char2hex((char*)vol, n);
-                        glog::GetInstance()->AddLine("%s", hh.c_str());
-                        map<string, IOCP_IO_PTR>::iterator itegay = lp_this->m_mcontralcenter.find(l_comaddr);
-
-                        if(itegay != lp_this->m_mcontralcenter.end())
-                        {
-                            IOCP_IO_PTR lo = itegay->second;
-                            lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, vol, n);
-                            lo->wsaBuf.len = n; // sizeof(vol);
-                            lo->wsaBuf.buf = lo->buf;
-                            lo->operation = IOCP_WRITE;
-                            lp_this->DataAction(lo, lo->lp_key);
-                            Sleep(100);
-                        }
-
-                        break;
-                    }
-
-                    if(z == 50)
-                    {
-                        BYTE vol[1024] = {0};
-                        v_param[0] = 50;
-                        int  n = lp_this->buidByte(l_comaddr, 0x4, 0xAC, 0x71, 0, 0x0040, v_param, vol);
-                        string  hh = gstring::char2hex((char*)vol, n);
-                        glog::GetInstance()->AddLine("%s", hh.c_str());
-                        map<string, IOCP_IO_PTR>::iterator itegay = lp_this->m_mcontralcenter.find(l_comaddr);
-
-                        if(itegay != lp_this->m_mcontralcenter.end())
-                        {
-                            IOCP_IO_PTR lo = itegay->second;
-                            lp_this->InitIoContext(lo);
-                            memcpy(lo->buf, vol, n);
-                            lo->wsaBuf.len = n; // sizeof(vol);
-                            lo->wsaBuf.buf = lo->buf;
-                            lo->operation = IOCP_WRITE;
-                            lp_this->DataAction(lo, lo->lp_key);
-                            Sleep(100);
-                        }
-
-                        z = 0;
-                    }
-                }
+                BYTE data[8] = {0};
+                data[0] = 0x1;
+                data[1] = 0x3;
+                SHORT infonum = 3800 | 0x1000;               //一次只能10个信息点  10个信息点200字节
+                data[2] = infonum >> 8 & 0xff;
+                data[3] = infonum & 0xff;
+                data[4] = 0;
+                data[5] = 1;
+                SHORT crc16 = lp_this->usMBCRC16(data, 6);
+                data[6] = crc16 & 0x00ff;
+                data[7] = crc16 >> 8 & 0x00ff;
+                lp_this->InitIoContext(lo);
+                memcpy(lo->buf, data, sizeof(data));
+                lo->wsaBuf.len = sizeof(data);
+                lo->wsaBuf.buf = lo->buf;
+                lo->operation = IOCP_WRITE;
+                lp_this->DataAction(lo, lo->lp_key);
             }
         }
+		//信息点
+        else if(msg.message == WM_USER + 4)
+        {
+            IOCP_IO_PTR lo = (IOCP_IO_PTR)msg.wParam;
+
+            if(lo)
+            {
+                BYTE data[8] = {0};
+                data[0] = 0x1;
+                data[1] = 0x3;
+                SHORT infonum = 0x9194;               //一次只能10个信息点  10个信息点200字节
+                data[2] = infonum >> 8 & 0xff;
+                data[3] = infonum & 0xff;
+                data[4] = 0;
+                data[5] = 100;
+                SHORT crc16 = lp_this->usMBCRC16(data, 6);
+                data[6] = crc16 & 0x00ff;
+                data[7] = crc16 >> 8 & 0x00ff;
+                lp_this->InitIoContext(lo);
+                memcpy(lo->buf, data, sizeof(data));
+                lo->wsaBuf.len = sizeof(data);
+                lo->wsaBuf.buf = lo->buf;
+                lo->operation = IOCP_WRITE;
+                lp_this->DataAction(lo, lo->lp_key);
+            }
+        }
+		//采集回路开关
+		else if(msg.message == WM_USER + 5){
+			IOCP_IO_PTR lo = (IOCP_IO_PTR)msg.wParam;
+
+			if(lo)
+			{
+				BYTE data[8] = {0};
+				data[0] = 0x1;
+				data[1] = 0x3;
+				SHORT infonum = 0x91f8;               //一次只能10个信息点  10个信息点200字节
+				data[2] = infonum >> 8 & 0xff;
+				data[3] = infonum & 0xff;
+				data[4] = 0;
+				data[5] = 20;
+				SHORT crc16 = lp_this->usMBCRC16(data, 6);
+				data[6] = crc16 & 0x00ff;
+				data[7] = crc16 >> 8 & 0x00ff;
+				lp_this->InitIoContext(lo);
+				memcpy(lo->buf, data, sizeof(data));
+				lo->wsaBuf.len = sizeof(data);
+				lo->wsaBuf.buf = lo->buf;
+				lo->operation = IOCP_WRITE;
+				lp_this->DataAction(lo, lo->lp_key);
+			}
+		}
     }
 
     return 1;
@@ -1242,6 +1253,23 @@ BOOL CIOCP::InitAll()
     //string outstring = "";
     //BOOL bfullpack = TRUE;
     //int n1 = wsDecodeFrame((char*)hexData, outstring, sizeof(hexData), bfullpack);
+    //------------------------------------------------------------
+    //-----------       Created with 010 Editor        -----------
+    //------         www.sweetscape.com/010editor/          ------
+    //
+    // File    : Untitled1
+    // Address : 0 (0x0)
+    // Size    : 57 (0x39)
+    //------------------------------------------------------------
+    //unsigned char src[57] = {
+    //  0x01, 0x03, 0x0E, 0x00, 0x01, 0x00, 0x65, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    //  0x00, 0x30, 0x99, 0x01, 0x03, 0x0E, 0x00, 0x02, 0x00, 0x64, 0x00, 0x02, 0x00, 0x00, 0x00, 0x4E,
+    //  0x00, 0x00, 0x00, 0x00, 0x72, 0x08, 0x01, 0x03, 0x0E, 0x00, 0x03, 0x00, 0x65, 0x00, 0x05, 0x00,
+    //  0x00, 0x01, 0x1B, 0x00, 0x00, 0x00, 0x00, 0x5F, 0x98
+    //};
+    //DWORD dwBytes=sizeof(src);
+    //BYTE b2[]={0xff,0x9B};
+    //SHORT uu=*(SHORT*)b2;
     WSAData data;
 
     if(WSAStartup(MAKEWORD(2, 2), &data) != 0)
@@ -1336,7 +1364,7 @@ BOOL CIOCP::MainLoop()
 
     while(TRUE)
     {
-        dwRet = WaitForSingleObject(m_h_accept_event, INFINITE);
+        dwRet = WaitForSingleObject(m_h_accept_event, 60000);
 
         switch(dwRet)
         {
@@ -1389,12 +1417,18 @@ void CIOCP::CheckForInvalidConnection()
     //glog::trace("come on CheckForInvalidConnection");
     while(lp_start != NULL)
     {
+        if(IsBadReadPtr(lp_start, 4) != 0)
+        {
+            break;
+        }
+
         op_len = sizeof(op);
         nRet = getsockopt(lp_start->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
 
         if(SOCKET_ERROR == nRet)
         {
             glog::traceErrorInfo("CheckForInvalidConnection getsockopt", WSAGetLastError());
+            closesocket(lp_start->socket);
             lp_start = m_io_group.GetNext(pos);
             continue;
         }
@@ -1407,13 +1441,7 @@ void CIOCP::CheckForInvalidConnection()
 
                 if(len / 60 >= 2)
                 {
-                    // map<string, IOCP_IO_PTR>::iterator  it; m_mcontralcenter.find(lp_start)
                     glog::GetInstance()->AddLine("通信指针:%p 网关:%s 超时%d秒 主动关闭 容器长度:%d", lp_start, lp_start->gayway, len, m_io_group.GetCount());
-                    //string sql = "update t_baseinfo set online=0 where comaddr=\'";
-                    //sql.append(lp_start->gayway);
-                    //sql.append("\'");
-                    //glog::trace("\n%s", sql.c_str());
-                    //_RecordsetPtr rs =   dbopen->ExecuteWithResSQL(sql.c_str());
                     EnterCriticalSection(&crtc_sec);
                     map<string, IOCP_IO_PTR>::iterator  it =  m_mcontralcenter.find(lp_start->gayway);
 
@@ -1430,17 +1458,6 @@ void CIOCP::CheckForInvalidConnection()
                         }
                     }
 
-                    //for(it = m_mcontralcenter.begin(); it != m_mcontralcenter.end();)
-                    //{
-                    //    if(it->second == lp_start)
-                    //    {
-                    //        m_mcontralcenter.erase(it++);   //erase 删除后指向下一个迭代器
-                    //    }
-                    //    else
-                    //    {
-                    //        it++;
-                    //    }
-                    //}
                     LeaveCriticalSection(&crtc_sec);
                     closesocket(lp_start->socket);
                     break;
@@ -1454,7 +1471,7 @@ void CIOCP::CheckForInvalidConnection()
             {
                 int len = op - lp_start->timelen;
 
-                if(len / 60 >= 30)
+                if(len / 60 >= 20)
                 {
                     glog::GetInstance()->AddLine("主动关闭网页客户端");
                     closesocket(lp_start->socket);
@@ -1511,28 +1528,22 @@ DWORD CIOCP::CompletionRoutine(LPVOID lp_param)
         }
 
         //socket 通信时长
-        //int op_len = 0;
-        //int op = 0;
-        //op_len = sizeof(op);
-        //nRet = getsockopt(lp_io->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
-        //if(SOCKET_ERROR == nRet)
-        //  {
-        //    lp_this->PostLog("lp_io:%p errorcode:%d getsockopt", lp_io, WSAGetLastError(), lp_this->m_io_group.GetCount());
-        //    closesocket(lp_io->socket);
-        //    //continue;
-        //  }
-        //if(op != 0xffffffff)
-        //  {
-        //    lp_io->timelen = op;
-        //    //glog::traceErrorInfo("getsockopt",WSAGetLastError());
-        //    //glog::trace("\nlp_io:%p timelen:%d",lp_io,lp_io->timelen);
-        //  }
-        EnterCriticalSection(&lp_this->crtc_sec);
+        int op_len = 0;
+        int op = 0;
+        op_len = sizeof(op);
+        nRet = getsockopt(lp_io->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&op, &op_len);
+
+        if(op != 0xffffffff)
+        {
+            lp_io->timelen = op;
+            //glog::traceErrorInfo("getsockopt",WSAGetLastError());
+            //glog::trace("\nlp_io:%p timelen:%d",lp_io,lp_io->timelen);
+        }
 
         if(bRet && lp_io && lp_key)
         {
             string hexdata = gstring::char2hex(lp_io->buf, dwBytes);
-            glog::GetInstance()->AddLine("operation:%d 包长度:%d 包数据:%s", lp_io->operation, dwBytes, hexdata.c_str());
+            glog::GetInstance()->AddLine("指针:%p operation:%d 包长度:%d 包数据:%s", lp_io, lp_io->operation, dwBytes, hexdata.c_str());
 
             switch(lp_io->operation)
             {
@@ -1591,9 +1602,11 @@ DWORD CIOCP::CompletionRoutine(LPVOID lp_param)
 
                 case IOCP_READ:
                     {
+                        EnterCriticalSection(&lp_this->crtc_sec);
                         lp_this->dealRead(lp_io, lp_key, dwBytes);
 ToMsg:
                         bRet = lp_this->DataAction(lp_io, lp_new_key);
+                        LeaveCriticalSection(&lp_this->crtc_sec);
                     }
                     break;
 
@@ -1608,8 +1621,6 @@ ToMsg:
                     break;
             }
         }
-
-        LeaveCriticalSection(&lp_this->crtc_sec);
     }
 
     return 0;
@@ -1897,138 +1908,24 @@ int CIOCP::wsEncodeFrame(string inMessage, char outFrame[], enum WS_FrameType fr
 
 BOOL CIOCP::checkFlag(BYTE vv[], int len)
 {
-    if(len < 6)
-    {
-        return FALSE;
-    }
-
-    if(vv[0] == 0x68 && vv[5] == 0x68 && vv[len - 1] == 0x16)
-    {
-        SHORT len1 = *(SHORT*)&vv[1];
-        SHORT len2 = *(SHORT*)&vv[3];
-        SHORT len11 = len1 >> 2;
-        SHORT len22 = len2 >> 2;
-
-        if(len11 == len22 && len22 == len - 8)
-        {
-            return TRUE;
-        }
-    }
-
+    //if(len < 6)
+    //{
+    //    return FALSE;
+    //}
+    //if(vv[0] == 0x68 && vv[5] == 0x68 && vv[len - 1] == 0x16)
+    //{
+    //    SHORT len1 = *(SHORT*)&vv[1];
+    //    SHORT len2 = *(SHORT*)&vv[3];
+    //    SHORT len11 = len1 >> 2;
+    //    SHORT len22 = len2 >> 2;
+    //    if(len11 == len22 && len22 == len - 8)
+    //    {
+    //        return TRUE;
+    //    }
+    //}
     return FALSE;
 }
-//生成响应代码  src
-/*
-*  src 源收到的数据包
-*  srclen 源包长度
-*  des  生成目标的包
-*/
-void CIOCP::buildcode(BYTE src[], int srclen, IOCP_IO_PTR & lp_io)
-{
-    //链路检测 登陆  控制域 c4: 1100 0100  功能码：0x02 src[13] da1 src[14] da2 src[15] dt0    p0  f1  登陆   6控制域  13帧序列 12
-    //&&src[14]==0x0&&src[15]==0x0&&src[16]==0x01&&src[17]==1   1100 0000 1100 0000   1 dir  1 yn PRM  6控制域  帧是是否要回复 src[13]
-    BYTE AFN = src[12];
-    char addr1[4] = {0};
-    memcpy(addr1, &src[7], 4); //地址
-    char addrarea[20] = {0};
-    sprintf(addrarea, "%02x%02x%02x%02x", addr1[1], addr1[0], addr1[3], addr1[2]); //网关地址
-    BYTE frame = src[13] & 0x0f;   //侦
-    BYTE    con =    src[13] & 0x10;
-    BYTE   DirPrmCode = src[6] & 0xc0;   //上行  从动
-    BYTE   FC = src[6] & 0xF; //控制域名的功能码
-    BYTE DA[2] = {0};
-    BYTE DT[2] = {0};
-    //string addrarea = gstring::char2hex(addr1, 4);
-    memcpy(DA, &src[14], 2);    //PN P0
-    memcpy(DT, &src[16], 2);   //F35  三相电压   00 00 04 04 昨天三相电压
 
-    //链路检测
-    if(AFN == 0x02)      //链路检测
-    {
-        //src[6] == 0xc4 && src[13] & 0x10 == 0x10
-        BYTE    con =    src[13] & 0x10;
-        BYTE   DirPrmCode = src[6] & 0xc4;
-        BYTE DA[2] = {0};
-        BYTE DT[2] = {0};
-        memcpy(DA, &src[14], 2);    //PN P0
-        memcpy(DT, &src[16], 2);   //FN  1 登陆 | 3 心跳
-
-        if(DirPrmCode == 0xc4 && con == 0x10)    //需要回复
-        {
-            if(DA[0] == 0 && DA[1] == 0 && DT[1] == 0 && DT[0] == 1) //DT1组
-            {
-                lp_io->fromtype = SOCKET_FROM_GAYWAY;
-                glog::GetInstance()->AddLine("网关[%s] 登陆", addrarea);
-                PostLog("网关[%s] 登陆", addrarea);
-                strcpy(lp_io->gayway, addrarea);
-                setOnline(addrarea, 1);
-                map<string, IOCP_IO_PTR>::iterator it = m_mcontralcenter.find(addrarea);
-
-                if(it == m_mcontralcenter.end())
-                {
-                    m_mcontralcenter.insert(pair<string, IOCP_IO_PTR>(addrarea, lp_io));
-                }
-                else
-                {
-                    it->second = lp_io;
-                }
-
-                BYTE des[50] = {0};
-                int deslen = 0;
-                buildConCode(src, des, deslen, 1);
-                InitIoContext(lp_io);
-                memcpy(lp_io->buf, des, deslen);
-                lp_io->wsaBuf.len = deslen;
-                lp_io->operation = IOCP_WRITE;
-            }
-            else if(DA[0] == 0 && DA[1] == 0 && DT[1] == 0 && DT[0] == 4)
-            {
-                map<string, IOCP_IO_PTR>::iterator it = m_mcontralcenter.find(addrarea);
-
-                if(it != m_mcontralcenter.end())
-                {
-                    BYTE day = src[22];
-                    PostLog("网关[%s] 心跳", addrarea);
-                    BYTE des[50] = {0};
-                    int deslen = 0;
-                    buildConCode(src, des, deslen, 1);
-                    InitIoContext(lp_io);
-                    memcpy(lp_io->buf, des, deslen);
-                    lp_io->wsaBuf.len = deslen;
-                    lp_io->operation = IOCP_WRITE;
-                    PostThreadMessageA(ThreadId, WM_USER + 1, (WPARAM)lp_io, (LPARAM)day);
-                }
-            }
-        }
-    }
-}
-void CIOCP::buildConCode(BYTE src[], BYTE res[], int& len, BYTE bcon)
-{
-    BYTE frame = src[13] & 0xf;   //帧序号
-    BYTE btemp[216] = {0};
-    btemp[0] = 0x68;
-    int nbyte1 = 20 - 2 - 6;     //20自定义长度
-    short n111 = (nbyte1 << 2) | 2;
-    memcpy(&btemp[1], &n111, 2);
-    memcpy(&btemp[3], &n111, 2);
-    btemp[5] = 0x68;
-    btemp[6] = 0x04;                //控制域 0000 0100   0100下行,从动      04是发送回去无需应答
-    memcpy(&btemp[7], &src[7], 5);  //地址域
-    btemp[12] = 0x00;
-    btemp[13] = frame;
-    btemp[19] = 0x16;
-    memcpy(&btemp[14], &src[14], 4);
-    BYTE  checksum = 0;
-
-    for(int j = 6; j < 18; j++)
-    {
-        checksum += btemp[j];
-    }
-
-    btemp[18] = checksum;
-    memcpy(res, btemp, 20);
-    len = 20;
-}
 BOOL CIOCP::AppendByte(BYTE src[], int& len, pBREAKPCK pack, IOCP_IO_PTR & lp_io)
 {
     if(pack != NULL && pack->len > 0)
@@ -2191,6 +2088,24 @@ void CIOCP::ExitSocket(IOCP_IO_PTR & lp_io, IOCP_KEY_PTR & lp_key, int errcode)
     //消息队列删除   消息队列存的是网页客户端
     //  EnterCriticalSection(&crtc_sec);
     DeleteByIo((ULONG_PTR)lp_io->pUserData);
+
+    if(lp_io->fromtype == SOCKET_FROM_GAYWAY)
+    {
+        string gayway = lp_io->gayway;
+        map<string, IOCP_IO_PTR>::iterator  it =  m_mcontralcenter.find(gayway);
+
+        if(it != m_mcontralcenter.end())
+        {
+            if(it->second == lp_io)
+            {
+                setOnline(lp_io->gayway, 0);
+            }
+        }
+        else
+        {
+        }
+    }
+
     lp_io->pUserData = NULL;
     LeaveCriticalSection(&crtc_sec);
 }
@@ -2241,13 +2156,383 @@ BOOL CIOCP::dealRead(IOCP_IO_PTR & lp_io, IOCP_KEY_PTR & lp_key, DWORD dwBytes)
         }
     }
 
+    if(lp_io->fromtype == SOCKET_FROM_GAYWAY)
+    {
+        if(dwBytes > 2)
+        {
+            char pgayway[30] = {0};
+            strcpy(pgayway, lp_io->gayway);
+            int nn = 0;
 
-	if (lp_io->fromtype==SOCKET_FROM_GAYWAY)
-	{
+            if(strncmp((char*)src, pgayway, strlen(pgayway)) == 0)
+            {
+                nn = strlen(pgayway) + 2;
+                BYTE* psrc = src + nn;
+                BYTE* psrc1 = src + nn;
+                int packlen = dwBytes - nn;
 
-	}
+                //命令
+                if(psrc[0] == 0x40 && psrc[1] == 0x44 && psrc[2] == 0x54 && psrc[3] == 0x55)
+                {
+                    char info[512] = {0};
+                    int nn = packlen > 512 ? 512 : packlen;
+                    memcpy(info, psrc, nn);
+                    PostLog(info);
+                    return TRUE;
+                }
 
+                if(strncmp((char*)psrc, pgayway, strlen(pgayway)) == 0)
+                {
+                    lp_io->ibeathit += 1;
+                    PostLog("网关[%s] 心跳包 %d ", lp_io->gayway, lp_io->ibeathit);
 
+					if(lp_io->ibeathit % 5 == 0)
+					{
+						PostLog("网关:%s 5分钟采集传感器", lp_io->gayway);
+						PostThreadMessageA(ThreadId, WM_USER + 4, (WPARAM)lp_io, (LPARAM)0);
+					}
+
+					if(lp_io->ibeathit % 4 == 0)
+					{
+						PostLog("网关:%s 4分钟采集回路", lp_io->gayway);
+						PostThreadMessageA(ThreadId, WM_USER + 1, (WPARAM)lp_io, (LPARAM)0);
+					}
+
+                    PostThreadMessageA(ThreadId, WM_USER + 3, (WPARAM)lp_io, (LPARAM)0);
+                    return TRUE;
+                }
+                else
+                {
+                    if(dwBytes == nn)
+                    {
+                        lp_io->ibeathit += 1;
+                        PostLog("网关[%s] 心跳包 %d ", lp_io->gayway, lp_io->ibeathit);
+
+						if(lp_io->ibeathit % 5 == 0)
+						{
+							PostLog("网关:%s 5分钟采集信息点", lp_io->gayway);
+							PostThreadMessageA(ThreadId, WM_USER + 4, (WPARAM)lp_io, (LPARAM)0);
+						}
+
+						if(lp_io->ibeathit % 4 == 0)
+						{
+							PostLog("网关:%s 4分钟采集控制点", lp_io->gayway);
+							PostThreadMessageA(ThreadId, WM_USER + 1, (WPARAM)lp_io, (LPARAM)0);
+						}
+
+                        PostThreadMessageA(ThreadId, WM_USER + 3, (WPARAM)lp_io, (LPARAM)0);
+                        return TRUE;
+                    }
+
+                    if(psrc[0] == 0x1 && psrc[1] == 3)
+                    {
+                        BYTE  n = 0;
+                        int z = 0;
+                        time_t tmtamp;
+                        struct tm *tm1 = NULL;
+                        time(&tmtamp) ;
+                        tm1 = localtime(&tmtamp) ;
+                        char time2[40] = {0};
+                        sprintf(time2, "%04d-%02d-%02d %02d:%02d:%02d", tm1->tm_year + 1900, tm1->tm_mon + 1, tm1->tm_mday, tm1->tm_hour, tm1->tm_min, tm1->tm_sec);
+
+                        while(n < dwBytes - nn)
+                        {
+                            BYTE len = psrc[n + 2];
+                            BYTE endlen = len + 2 + 1 + 2;
+                            SHORT crc16 = usMBCRC16(&psrc[n], endlen - 2);
+                            SHORT crc16_ = *(SHORT*)(&psrc[n + endlen - 2]);
+
+                            if(crc16 == crc16_)
+                            {
+                                string data1 = gstring::char2hex((const char*)&psrc[n], endlen);
+                                PostLog("网关[%s] 长度:%d 数据:%s", lp_io->gayway, endlen, data1.c_str());
+
+                                if(packlen)     //尾校验码2位  01 站号  03功能码  c8=200 字节数
+                                {
+                                    //信息点
+                                    if(psrc[2] == packlen - 5 && packlen - 5 == 200)
+                                    {
+                                        PostLog("采集信息点数据");
+                                        int zz = 3;
+                                        string gayway = lp_io->gayway;
+                                        string sql = "select * from t_sensor where deplayment=1 and l_comaddr=\'";
+                                        sql.append(gayway);
+                                        sql.append("\' ORDER BY infonum DESC");
+                                        _RecordsetPtr rs = dbopen->ExecuteWithResSQL(sql.c_str());
+
+                                        while(rs && !rs->adoEOF)
+                                        {
+                                            variant_t vinfoval = rs->GetCollect("infonum");
+                                            int iinfo = vinfoval;
+                                            variant_t vsitenum = rs->GetCollect("sitenum");
+                                            int isitenum = vsitenum;
+                                            int pos = iinfo * 2 + zz;
+                                            int pos1 = iinfo * 2 + 1 + zz;
+
+                                            if(iinfo >= 0 && iinfo < 100)
+                                            {
+                                                SHORT val = psrc[pos] * 256 + psrc[pos1];
+                                                char pvalue[20] = {0};
+                                                char pinfo[20] = {0};
+                                                char psitenum[20] = {0};
+                                                sprintf(pvalue, "%d", val);
+                                                sprintf(pinfo, "%d", iinfo);
+                                                sprintf(psitenum, "%d", isitenum);
+                                                map<string, _variant_t>m_var;
+                                                m_var.clear();
+                                                string con = "where deplayment=1 and infonum=";
+                                                con.append(pinfo);
+                                                con.append(" and sitenum=");
+                                                con.append(psitenum);
+                                                con.append(" and l_comaddr=\'");
+                                                con.append(lp_io->gayway);
+                                                con.append("\'");
+                                                _variant_t  vnumvalue(pvalue);
+                                                m_var.insert(pair<string, _variant_t>("numvalue", vnumvalue));
+                                                string updatesql = dbopen->GetUpdateSql(m_var, "t_sensor", con);
+                                                PostLog("%s", updatesql.c_str());
+                                                _RecordsetPtr rsupdate = dbopen->ExecuteWithResSQL(updatesql.c_str());
+                                            }
+                                            else
+                                            {
+                                                PostLog("信息点过大:%d",iinfo);
+                                            }
+
+                                            //    _variant_t  verrset((int)setflag);
+                                            //    _variant_t  verrflag((int)errflag);
+                                            //    _variant_t  verrcount((int)errcount);
+                                            //    _variant_t  vonlinetime(time2);
+                                            //    m_var.insert(pair<string, _variant_t>("numvalue", vnumvalue));
+                                            //    m_var.insert(pair<string, _variant_t>("errset", verrset));
+                                            //    m_var.insert(pair<string, _variant_t>("errflag", verrflag));
+                                            //    m_var.insert(pair<string, _variant_t>("errcount", verrcount));
+                                            //    m_var.insert(pair<string, _variant_t>("onlinetime", vonlinetime));
+                                            //    string con = "where deplayment=1 and infonum=";
+                                            //    con.append(pinfonum);
+                                            //    con.append(" and sitenum=");
+                                            //    con.append(psitenum);
+                                            //    con.append(" and l_comaddr=\'");
+                                            //    con.append(lp_io->gayway);
+                                            //    con.append("\'");
+                                            //    string updatesql = dbopen->GetUpdateSql(m_var, "t_sensor", con);
+                                            //    _RecordsetPtr rs = dbopen->ExecuteWithResSQL(updatesql.c_str());
+                                            rs->MoveNext();
+                                        }
+
+                                        //for(int z = 0; z < 10; z++)
+                                        //{
+                                        //    int n1 = z * 2 * 10 + n;
+                                        //    SHORT infonum =  psrc[n1 + 3] * 256 + psrc[n1 + 4];
+                                        //    SHORT sitenum =  psrc[n1 + 5] * 256 + psrc[n1 + 6];
+                                        //    SHORT regpos =  psrc[n1 + 7] * 256 + psrc[n1 + 8];
+                                        //    SHORT worktype =  psrc[n1 + 9] * 256 + psrc[n1 + 10];
+                                        //    SHORT value =  psrc[n1 + 11] * 256 + psrc[n1 + 12];
+                                        //    SHORT setflag =  psrc[n1 + 13] * 256 + psrc[n1 + 14];
+                                        //    SHORT errflag =  psrc[n1 + 15] * 256 + psrc[n1 + 16];
+                                        //    SHORT errcount =  psrc[n1 + 17] * 256 + psrc[n1 + 18];
+                                        //    if(sitenum == 0)
+                                        //    {
+                                        //        continue;
+                                        //    }
+                                        //    char pinfonum[20] = {0};
+                                        //    char psitenum[20] = {0};
+                                        //    char pregpos[20] = {0};
+                                        //    char pworktype[20] = {0};
+                                        //    char pvalue[20] = {0};
+                                        //    char psetflag[20] = {0};
+                                        //    char perrflag[20] = {0};
+                                        //    char perrcount[20] = {0};
+                                        //    sprintf(pinfonum, "%d", infonum);
+                                        //    sprintf(psitenum, "%d", sitenum);
+                                        //    sprintf(pregpos, "%d", regpos);
+                                        //    sprintf(pworktype, "%d", worktype);
+                                        //    sprintf(pvalue, "%d", value);
+                                        //    sprintf(psetflag, "%d", setflag);
+                                        //    sprintf(perrflag, "%d", errflag);
+                                        //    sprintf(perrcount, "%d", errcount);
+                                        //    char infodata[216] = {0};
+                                        //    sprintf(infodata, "信息号:%d 站号:%d 数据位置:%d 工作模式:%d 数值:%d 故障设置标志:%d 故障出错标志:%d 通信出错次数:%d", \
+                                        //            infonum, sitenum, regpos, worktype, value, setflag, errflag, errcount);
+                                        //    PostLog("%s", infodata);
+                                        //    map<string, _variant_t>m_var;
+                                        //    //dbopen->GetUpdateSql()
+                                        //    _variant_t  vnumvalue(pvalue);
+                                        //    _variant_t  verrset((int)setflag);
+                                        //    _variant_t  verrflag((int)errflag);
+                                        //    _variant_t  verrcount((int)errcount);
+                                        //    _variant_t  vonlinetime(time2);
+                                        //    m_var.insert(pair<string, _variant_t>("numvalue", vnumvalue));
+                                        //    m_var.insert(pair<string, _variant_t>("errset", verrset));
+                                        //    m_var.insert(pair<string, _variant_t>("errflag", verrflag));
+                                        //    m_var.insert(pair<string, _variant_t>("errcount", verrcount));
+                                        //    m_var.insert(pair<string, _variant_t>("onlinetime", vonlinetime));
+                                        //    string con = "where deplayment=1 and infonum=";
+                                        //    con.append(pinfonum);
+                                        //    con.append(" and sitenum=");
+                                        //    con.append(psitenum);
+                                        //    con.append(" and l_comaddr=\'");
+                                        //    con.append(lp_io->gayway);
+                                        //    con.append("\'");
+                                        //    string updatesql = dbopen->GetUpdateSql(m_var, "t_sensor", con);
+                                        //    _RecordsetPtr rs = dbopen->ExecuteWithResSQL(updatesql.c_str());
+                                        //    //INSERT INTO t_momentdata(DAY,infonum) VALUES (GETDATE(),1)
+                                        //}
+                                    }
+
+                                    ////控制点
+                                    //else if(psrc[2] == packlen - 5 && packlen - 5 == 160)   //控制点采集
+                                    //{
+                                    //    PostLog("采集控制点数据");
+                                    //    for(int z = 0; z < 4; z++)
+                                    //    {
+                                    //        int n1 = z * 2 * 20 + n;
+                                    //        SHORT infonum =  psrc[n1 + 3] * 256 + psrc[n1 + 4];
+                                    //        SHORT sitenum =  psrc[n1 + 5] * 256 + psrc[n1 + 6];
+                                    //        SHORT regpos =  psrc[n1 + 7] * 256 + psrc[n1 + 8];
+                                    //        SHORT worktype =  psrc[n1 + 9] * 256 + psrc[n1 + 10];
+                                    //        SHORT value =  psrc[n1 + 11] * 256 + psrc[n1 + 12];
+                                    //        if(sitenum == 0)
+                                    //        {
+                                    //            continue;
+                                    //        }
+                                    //        char pinfonum[20] = {0};
+                                    //        char psitenum[20] = {0};
+                                    //        char pregpos[20] = {0};
+                                    //        char pworktype[20] = {0};
+                                    //        char pvalue[20] = {0};
+                                    //        sprintf(pinfonum, "%d", infonum);
+                                    //        sprintf(psitenum, "%d", sitenum);
+                                    //        sprintf(pregpos, "%d", regpos);
+                                    //        sprintf(pworktype, "%d", worktype);
+                                    //        sprintf(pvalue, "%d", value);
+                                    //        char infodata[216] = {0};
+                                    //        sprintf(infodata, "控制点:%d 站号:%d 数据位置:%d 工作模式:%d 控制值:%d ", \
+                                    //                infonum, sitenum, regpos, worktype, value);
+                                    //        PostLog("%s", infodata);
+                                    //        map<string, _variant_t>m_var;
+                                    //        _variant_t  vl_switch(pvalue);
+                                    //        m_var.insert(pair<string, _variant_t>("l_switch", vl_switch));
+                                    //        string con = "where l_deplayment=1 and l_info=";
+                                    //        con.append(pinfonum);
+                                    //        con.append(" and l_site=");
+                                    //        con.append(psitenum);
+                                    //        con.append(" and l_comaddr=\'");
+                                    //        con.append(lp_io->gayway);
+                                    //        con.append("\'");
+                                    //        string updatesql = dbopen->GetUpdateSql(m_var, "t_loop", con);
+                                    //        PostLog("%s", updatesql.c_str());
+                                    //        _RecordsetPtr rs = dbopen->ExecuteWithResSQL(updatesql.c_str());
+                                    //    }
+                                    //}
+                                    ////场景值
+                                    //else if(psrc[2] == packlen - 5 && packlen - 5 == 2)
+                                    //{
+                                    //    SHORT scenenum =  psrc[3] * 256 + psrc[4];
+                                    //    PostLog("网关[%s] 场景号:%d", lp_io->gayway, scenenum);
+                                    //    map<string, _variant_t>m_var;
+                                    //    //dbopen->GetUpdateSql()
+                                    //    _variant_t  vday("GETDATE()");
+                                    //    _variant_t  vscene((int)scenenum);
+                                    //    _variant_t  vcomaddr(lp_io->gayway);
+                                    //    //_variant_t  verrset((int)setflag);
+                                    //    //_variant_t  verrflag((int)errflag);
+                                    //    //_variant_t  verrcount((int)errcount);
+                                    //    //_variant_t  vonlinetime(time2);
+                                    //    m_var.insert(pair<string, _variant_t>("day", vday));
+                                    //    m_var.insert(pair<string, _variant_t>("scenenum", vscene));
+                                    //    m_var.insert(pair<string, _variant_t>("comaddr", vcomaddr));
+                                    //    string sql =  dbopen->GetInsertSql(m_var, "t_scene");
+                                    //    PostLog("%s", sql.c_str());
+                                    //    _RecordsetPtr rs = dbopen->ExecuteWithResSQL(sql.c_str());
+                                    //}
+                                }
+                            }
+                            else
+                            {
+                                break;
+                            }
+
+                            n += endlen;
+                            z++;
+                        }
+                    }
+
+                    SHORT crc16 = usMBCRC16(psrc1, packlen - 2);
+                    SHORT crc16_ = *(SHORT*)(&psrc1[packlen - 2]);
+
+                    if(crc16 == crc16_)
+                    {
+						//200 信息点  40:控制点     2:场景
+                        if(psrc1[3] == 40 || psrc1[3] == 200 || psrc1[3] == 2)
+                        {
+							
+                            return FALSE;
+                        }
+
+                        PostLog("长度:%d 数据:%s", dwBytes, data.c_str());
+                        map<string, list<MSGPACK>>::iterator itmsg = m_MsgPack.find(lp_io->gayway);
+                        Json::Value root;
+
+                        if(itmsg != m_MsgPack.end())
+                        {
+                            list<MSGPACK>v_msg = itmsg->second;
+
+                            if(v_msg.size() > 0)
+                            {
+                                MSGPACK msgEnd = v_msg.back();
+                                IOCP_IO_PTR lp_io1 = NULL;
+                                lp_io1 = msgEnd.lp_io;
+                                itmsg->second.pop_back();
+                                root = msgEnd.root;
+
+                                if(itmsg->second.size() > 0)
+                                {
+                                    MSGPACK msgEnd = itmsg->second.back();
+                                    time_t tmnow = time(NULL);
+                                    float t = (float)(tmnow - msgEnd.timestamp) / 60;
+                                    PostLog("最后消息队列帧:%d 驻留分钟数%0.2f分", msgEnd.seq, t);
+
+                                    if(t > 1)
+                                    {
+                                        itmsg->second.clear();
+                                    }
+                                }
+
+                                if(lp_io1 != NULL)
+                                {
+                                    root["status"] = "success";
+                                    root["comaddr"] = lp_io->gayway;
+                                    root["data"] = gstring::char2hex((const char*)psrc1, packlen);
+                                    root["length"] = datalen;
+                                    string inmsg = root.toStyledString();
+                                    char outmsg[1048] = {0};
+                                    int lenret = 0;
+                                    int len = wsEncodeFrame(inmsg, outmsg, WS_TEXT_FRAME, lenret);
+
+                                    if(len != WS_ERROR_FRAME)
+                                    {
+                                        memcpy(lp_io1->buf, outmsg, lenret);
+                                        lp_io1->wsaBuf.buf = lp_io1->buf;
+                                        lp_io1->wsaBuf.len = lenret;
+                                        lp_io1->operation = IOCP_WRITE;
+                                        DataAction(lp_io1, lp_io1->lp_key);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                //if(checkFlag(psrc, packlen))
+                //{
+                //    PostThreadMessageA(ThreadId, WM_USER + 1, (WPARAM)lp_io, (LPARAM)0);
+                //    lp_io->ibeathit += 1;
+                //    return TRUE;
+                //    // PostThreadMessageA(ThreadId, WM_USER + 1, (WPARAM)lp_io, (LPARAM)0);
+                //}
+            }
+        }
+    }
 
     if(lp_io->fromtype == SOCKET_FROM_WEBSOCKET)
     {

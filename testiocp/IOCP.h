@@ -155,8 +155,6 @@ public:
   void                dealws(IOCP_IO_PTR& lp_io, string& jsondata);
   //¼¯ÖÐÆ÷
   BOOL                checkFlag(BYTE vv[], int len);
-  void                buildcode(BYTE src[], int srclen, IOCP_IO_PTR& lp_io);
-  void                buildConCode(BYTE src[], BYTE res[], int& len, BYTE bcon);
   BOOL        CloseMySocket(IOCP_IO_PTR lp_io);
 private:
   void                InitIoContext(IOCP_IO_PTR lp_io);

@@ -86,7 +86,7 @@ typedef struct
   PVOID           pUserData;
   int             timelen;
   volatile int        state;
-  int               ibreakpack;
+  int               ibeathit;
 
 } IOCP_IO, *IOCP_IO_PTR;
 
