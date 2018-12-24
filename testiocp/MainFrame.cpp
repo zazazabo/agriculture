@@ -116,13 +116,7 @@ void CMainFrame::Init()
     string str = bcon == TRUE ? "数据库连接不成功" : "数据库连接成功";
     PostLog("%s", str.c_str());
     glog::GetInstance()->AddLine("conn:%d", bcon);
-    _RecordsetPtr rs = dbopen->ExecuteWithResSQL("select * from t_lamp");
 
-    while(rs && !rs->adoEOF)
-    {
-        _variant_t l_code = rs->GetCollect("l_code");
-        rs->MoveNext();
-    }
 	    setOnline("1=1", 0);
     ////dealSql("17020101", "2018-09-28", "bbb", "activepower");
     this->m_hParanWnd = this->m_hWnd;
